@@ -50,6 +50,9 @@ struct BrowserList: View {
         }
         .background(Theme.Palette.bgApp)
         .toolbar { toolbar }
+        // Loads on appear and on pull: the list owns its own loading, for
+        // the root and for any folder.
+        .task { await model.load() }
         .refreshable { await model.load() }
         .fileImporter(
             isPresented: $showingImporter,

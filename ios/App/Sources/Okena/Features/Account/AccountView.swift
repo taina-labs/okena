@@ -74,6 +74,9 @@ struct AccountView: View {
                                 Text(host.display)
                                     .typeStyle(Theme.Text.monoSm)
                                     .foregroundStyle(Theme.Palette.textMuted)
+                                if host.isCleartext {
+                                    CleartextNotice()
+                                }
                             }
                             if let version = session.instance?.version {
                                 Text("Versão da caixa: \(version)")

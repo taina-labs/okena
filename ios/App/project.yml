@@ -40,10 +40,14 @@ targets:
         # One palette, the night one: a light theme would be an undesigned
         # second theme. tokens.css has no light values.
         UIUserInterfaceStyle: Dark
-        # Cleartext is only ever allowed for a box on the local network,
-        # the same rule InstanceAddress enforces.
+        # The box address is typed by the person on the first screen, so the
+        # app cannot know at build time whether it answers over TLS. A scoped
+        # exception cannot cover a host that is not known until runtime, and
+        # a name such as taina.yby is not "local" to ATS either. Cleartext is
+        # allowed and stated out loud instead (InstanceAddress.isCleartext).
+        # App Store review wants this reason in the review notes.
         NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
         UIAppFonts:
           - BricolageGrotesque-Variable.ttf
           - SchibstedGrotesk-Variable.ttf

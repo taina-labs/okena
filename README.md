@@ -73,6 +73,40 @@ env -u LD -u CC -u CXX -u CPPFLAGS -u LDFLAGS -u AR -u NM -u RANLIB \
     -derivedDataPath .derived CODE_SIGNING_ALLOWED=NO build
 ```
 
+### Duas armadilhas do simulador
+
+- **Assinatura**: um build de simulador com `CODE_SIGNING_ALLOWED=NO` sai sem
+  entitlements, o Keychain recusa a escrita (`errSecMissingEntitlement`) e o
+  login falha com "Não foi possível guardar a sessão neste aparelho". Deixe a
+  assinatura ad-hoc padrão do Xcode para rodar no simulador.
+- **Primeiro setup**: o app começa na tela de Setup, então precisa de um
+  endereço de verdade. Para pular as teclas em teste, o build de DEBUG lê
+  `TAINA_HOST`, `TAINA_USERNAME` e `TAINA_PASSWORD` do ambiente, que o
+  simulador entrega pelo prefixo `SIMCTL_CHILD_`:
+
+```bash
+SIMCTL_CHILD_TAINA_HOST=http://taina.yby \
+SIMCTL_CHILD_TAINA_USERNAME=ana \
+SIMCTL_CHILD_TAINA_PASSWORD=segredo \
+  xcrun simctl launch --terminate-running-process booted io.taina.app
+```
+
+## Conferir contra uma caixa de verdade
+
+O core traz um smoke executável que percorre a fatia mínima da API pela mesma
+camada que o app usa. É a forma mais rápida de saber se o problema é da caixa ou
+do cliente:
+
+```bash
+cd ios/Core
+swift run okena-smoke http://taina.yby --user ana --password segredo --write
+```
+
+Sem `--write` ele só lê. Com `--write` ele cria a pasta `pasta-do-smoke`, sobe
+`teste-do-smoke.txt`, baixa de volta e confere os bytes, pede a miniatura (que
+um texto não tem) e diz o que deixou na comunidade. O token do aparelho nunca é
+impresso.
+
 ### O que já existe
 
 O núcleo (`OkenaCore`) cobre a fatia mínima da RFC_005: instância, sessão por

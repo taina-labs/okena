@@ -76,6 +76,9 @@ struct LoginView: View {
                 Text(host.display)
                     .typeStyle(Theme.Text.monoSm)
                     .foregroundStyle(Theme.Palette.textMuted)
+                if host.isCleartext {
+                    CleartextNotice()
+                }
             }
             Text("Entre com o seu usuário e senha da comunidade.")
                 .typeStyle(Theme.Text.body)

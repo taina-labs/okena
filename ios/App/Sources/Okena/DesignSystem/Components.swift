@@ -205,6 +205,22 @@ struct ZonaBadge: View {
     }
 }
 
+/// The path to the box has no TLS. Not a blocker, and never silent: a private
+/// network (a tailnet, a VPN) already encrypts the path under the app's feet,
+/// and outside one it does not. Shown where the address is typed, and on the
+/// account screen, where it still matters later.
+struct CleartextNotice: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Space.space2) {
+            Image(systemName: "lock.open")
+                .typeStyle(Theme.Text.caption)
+            Text("Esta comunidade responde sem criptografia (http). Numa rede privada, como uma VPN, o caminho já vai protegido; fora dela, não.")
+                .typeStyle(Theme.Text.caption)
+        }
+        .foregroundStyle(Theme.Palette.feedbackWarning)
+    }
+}
+
 // MARK: states
 
 struct EmptyStateAction {

@@ -35,6 +35,9 @@ struct SetupView: View {
                 PrimaryButton(title: "Conectar", loading: probing) {
                     Task { await connect() }
                 }
+                if typedCleartext {
+                    CleartextNotice()
+                }
                 if let instance = session.instance, !instance.bootstrapped {
                     RowCard {
                         VStack(alignment: .leading, spacing: Theme.Space.space2) {
@@ -54,6 +57,15 @@ struct SetupView: View {
             .padding(Theme.Space.space5)
         }
         .background(Theme.Palette.bgApp)
+    }
+
+    /// Says so while the person types, not after a failed attempt: the vault
+    /// deserves to know the path it is about to use.
+    private var typedCleartext: Bool {
+        guard case .success(let address) = InstanceAddress.parse(input: input) else {
+            return false
+        }
+        return address.isCleartext
     }
 
     private func connect() async {

@@ -1,3 +1,4 @@
+import Foundation
 import OkenaCore
 import SwiftUI
 
@@ -59,6 +60,9 @@ final class SessionModel {
     /// session that cannot be read counts as absent: the person signs in
     /// again.
     func restore() async {
+#if DEBUG
+        if await autoConfigure() { return }
+#endif
         host = await hostStore.address()
         switch await store.restore() {
         case .success(.some(let session)):
@@ -172,6 +176,33 @@ final class SessionModel {
     func makeFilesModel(folderRkey: String?) -> FilesModel {
         FilesModel(api: api, session: self, folderRkey: folderRkey)
     }
+
+#if DEBUG
+    /// Points the app at a box without typing, and optionally signs in, so
+    /// the flow can be driven from a script or a UI test. The simulator
+    /// passes these through `SIMCTL_CHILD_` variables. Everything a person's
+    /// run does happens here too, including keeping the address; signing in
+    /// writes the session to the Keychain, which is what signing in means.
+    private func autoConfigure() async -> Bool {
+        let environment = ProcessInfo.processInfo.environment
+        guard let typed = environment["TAINA_HOST"] else {
+            return false
+        }
+
+        // The same path a person takes: parse, probe the box, keep the
+        // address. Only the keystrokes are missing.
+        _ = await connect(typed)
+
+        if let username = environment["TAINA_USERNAME"],
+           let password = environment["TAINA_PASSWORD"] {
+            if case .failure(let error) = await login(username: username, password: password, deviceName: "Simulador") {
+                // Swallowing this costs an afternoon; the screen says it.
+                notice = error.errorDescription
+            }
+        }
+        return true
+    }
+#endif
 
     private func leaveLocally() async {
         _ = await store.signOut()
