@@ -42,6 +42,48 @@ pessoa ou pela zeladora, vale na requisição seguinte.
 - Um box serve **uma** comunidade: sem troca de comunidade, sem feed entre
   instâncias.
 
+## Rodar o app
+
+Precisa de Xcode 27 (Swift 6) e do XcodeGen.
+
+```bash
+brew install xcodegen
+
+cd ios/Core && swift test        # o núcleo, sem interface
+cd ios/App && xcodegen generate  # escreve Okena.xcodeproj
+open Okena.xcodeproj
+```
+
+O projeto do Xcode é gerado, não fica no repositório: `project.yml` é a fonte da
+verdade. Abra o `#Preview` de qualquer tela para vê-la funcionando contra uma
+comunidade de mentira, sem caixa e sem rede.
+
+Se o seu terminal exporta `SDKROOT`, `DEVELOPER_DIR`, `LD` ou `CFLAGS` (um dev
+shell de Nix, por exemplo), o `xcodebuild` adota esses valores e falha ao ligar.
+A chamada que funciona:
+
+```bash
+cd ios/App
+env -u LD -u CC -u CXX -u CPPFLAGS -u LDFLAGS -u AR -u NM -u RANLIB \
+    -u MACOSX_DEPLOYMENT_TARGET \
+    DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+    SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
+    xcodebuild -project Okena.xcodeproj -scheme Okena \
+    -destination 'generic/platform=iOS Simulator' \
+    -derivedDataPath .derived CODE_SIGNING_ALLOWED=NO build
+```
+
+### O que já existe
+
+O núcleo (`OkenaCore`) cobre a fatia mínima da RFC_005: instância, sessão por
+token de dispositivo, quem está agindo, pastas, conteúdo, upload, download e
+miniatura. O app tem as telas de Setup, Login, Arquivos e Conta. O resto da
+superfície (fotos, pessoas, mural, pedidos, armazenamento) entra no mesmo
+protocolo `TainaAPI`, um método por endpoint.
+
+Falta: as três fontes da marca (os arquivos OFL, com o `Font.custom` já
+apontando para elas), o ícone, a arte da tela de abertura, e o app Android.
+
 ## Licença
 
 AGPL-3.0, a mesma do Tainá. Veja `LICENSE`.

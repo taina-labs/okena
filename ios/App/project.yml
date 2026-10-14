@@ -1,0 +1,58 @@
+name: Okena
+
+options:
+  bundleIdPrefix: io.taina
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  OkenaCore:
+    path: ../Core
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+targets:
+  Okena:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/Okena
+    dependencies:
+      - package: OkenaCore
+    info:
+      path: Sources/Okena/Info.plist
+      properties:
+        CFBundleDisplayName: "Tainá"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        # One palette, the night one: a light theme would be an undesigned
+        # second theme. tokens.css has no light values.
+        UIUserInterfaceStyle: Dark
+        # Cleartext is only ever allowed for a box on the local network,
+        # the same rule InstanceAddress enforces.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.taina.app
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+
+schemes:
+  Okena:
+    build:
+      targets:
+        Okena: all
+    run:
+      config: Debug
