@@ -24,6 +24,10 @@ targets:
     platform: iOS
     sources:
       - path: Sources/Okena
+      # The three variable faces and their OFL licenses. Same axis (wght)
+      # as the web, which self-hosts the variable woff2 of the same families.
+      - path: Resources/Fonts
+        buildPhase: resources
     dependencies:
       - package: OkenaCore
     info:
@@ -40,6 +44,10 @@ targets:
         # the same rule InstanceAddress enforces.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        UIAppFonts:
+          - BricolageGrotesque-Variable.ttf
+          - SchibstedGrotesk-Variable.ttf
+          - JetBrainsMono-Variable.ttf
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.taina.app

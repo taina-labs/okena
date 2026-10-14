@@ -7,9 +7,10 @@ import SwiftUI
 /// name in the comment, in the file's order, so a drift check against
 /// `tokens.css` is a name-by-name comparison.
 enum Theme {
-    /// The three families of the design, by name. The OFL files are not
-    /// bundled yet, so `Font.custom` falls back to the system face; the
-    /// names are already the final ones.
+    /// The three families of the design, by name. The files are the
+    /// variable TTFs of the same families the web self-hosts, bundled under
+    /// `Resources/Fonts` and declared in `UIAppFonts`, so the weight axis is
+    /// the same on both surfaces.
     enum Fonts {
         static let display = "Bricolage Grotesque"  // --font-family-display
         static let body = "Schibsted Grotesk"       // --font-family-body

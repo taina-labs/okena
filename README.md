@@ -81,8 +81,11 @@ miniatura. O app tem as telas de Setup, Login, Arquivos e Conta. O resto da
 superfície (fotos, pessoas, mural, pedidos, armazenamento) entra no mesmo
 protocolo `TainaAPI`, um método por endpoint.
 
-Falta: as três fontes da marca (os arquivos OFL, com o `Font.custom` já
-apontando para elas), o ícone, a arte da tela de abertura, e o app Android.
+As três fontes da marca vêm empacotadas em `Resources/Fonts`: os TTF variáveis
+das mesmas famílias que a web auto-hospeda, com a licença OFL de cada uma. O
+eixo `wght` é o mesmo nas duas pontas.
+
+Falta: o ícone, a arte da tela de abertura, e o app Android.
 
 ## Licença
 
