@@ -37,9 +37,10 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
-        # One palette, the night one: a light theme would be an undesigned
-        # second theme. tokens.css has no light values.
-        UIUserInterfaceStyle: Dark
+        # The app follows the system appearance. tokens.css is one palette:
+        # the night default, with the light block derived from it under the
+        # same token names, and each semantic color carries both values.
+        UIUserInterfaceStyle: Automatic
         # The box address is typed by the person on the first screen, so the
         # app cannot know at build time whether it answers over TLS. A scoped
         # exception cannot cover a host that is not known until runtime, and

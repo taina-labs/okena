@@ -5,7 +5,9 @@ import SwiftUI
 /// semantic (what components consume). Views never touch `Primitive` and
 /// never write a raw value; every semantic constant carries its CSS token
 /// name in the comment, in the file's order, so a drift check against
-/// `tokens.css` is a name-by-name comparison.
+/// `tokens.css` is a name-by-name comparison. The file has two blocks, the
+/// night default and the light override under the same names; a semantic
+/// color carries both values and the system picks.
 enum Theme {
     /// The three families of the design, by name. The files are the
     /// variable TTFs of the same families the web self-hosts, bundled under
@@ -36,6 +38,7 @@ enum Theme {
         static let dawn500 = Color(hex: 0xf2a65a)  // --color-dawn-500
         static let dawn600 = Color(hex: 0xdd8a3e)  // --color-dawn-600
         static let dawn700 = Color(hex: 0xb96d2c)  // --color-dawn-700
+        static let dawn800 = Color(hex: 0xa35c1e)  // --color-dawn-800
 
         static let ember400 = Color(hex: 0xf08a6c)  // --color-ember-400
         static let ember500 = Color(hex: 0xe2674a)  // --color-ember-500
@@ -70,6 +73,10 @@ enum Theme {
         static let red500 = Color(hex: 0xe5484d)   // --color-red-500
         static let red600 = Color(hex: 0xc03538)   // --color-red-600
         static let amber500 = Color(hex: 0xefb54a)  // --color-amber-500
+        static let amber700 = Color(hex: 0x8a6114)  // --color-amber-700
+
+        // Paper: the white of the light theme (the elevated surface).
+        static let paper0 = Color(hex: 0xffffff)  // --color-paper-0
     }
 
     enum Radius {
@@ -134,67 +141,78 @@ enum Theme {
         // 8. The CSS spread (-4px on lifted) has no SwiftUI counterpart.
         static let soft = Shadow(
             y: 4, radius: 8,
-            color: Color(hex: 0x060a14, alpha: 0.5)  // --elevation-soft: 0 4px 16px rgb(6 10 20 / 0.5)
+            // --elevation-soft: 0 4px 16px rgb(6 10 20 / 0.5), light / 0.08
+            color: Color(light: Primitive.night950.opacity(0.08), dark: Primitive.night950.opacity(0.5))
         )
         static let lifted = Shadow(
             y: 12, radius: 16,
-            color: Color(hex: 0x060a14, alpha: 0.65)  // --elevation-lifted: 0 12px 32px -4px rgb(6 10 20 / 0.65)
+            // --elevation-lifted: 0 12px 32px -4px rgb(6 10 20 / 0.65), light / 0.16
+            color: Color(light: Primitive.night950.opacity(0.16), dark: Primitive.night950.opacity(0.65))
         )
     }
 
-    /// The semantic layer. The only colors a component consumes.
+    /// The semantic layer. The only colors a component consumes. A color
+    /// that differs between appearances is the pair from the two blocks of
+    /// `tokens.css`: the light value first, the night one second, resolved
+    /// by the system. One the light block does not override keeps the night
+    /// value in both.
     enum Palette {
-        static let bgApp = Primitive.night900   // --bg-app
-        static let bgDeep = Primitive.night950  // --bg-deep
-        static let bgQr = Primitive.star50      // --bg-qr
+        static let bgApp = Color(light: Primitive.star50, dark: Primitive.night900)  // --bg-app
+        static let bgDeep = Color(light: Primitive.star100, dark: Primitive.night950)  // --bg-deep
+        static let bgQr = Color(light: Primitive.paper0, dark: Primitive.star50)  // --bg-qr
+        static let bgViewer = Primitive.night950  // --bg-viewer: dark in both themes, media want a neutral frame
 
-        static let surfaceDefault = Primitive.night800                   // --surface-default
-        static let surfaceRaised = Primitive.night700                    // --surface-raised
-        static let surfaceHigh = Primitive.night600                      // --surface-high
-        static let surfaceOverlay = Primitive.night900.opacity(0.88)     // --surface-overlay
-        static let surfaceDim = Primitive.night500                       // --surface-dim
-        static let surfaceScrim = Primitive.night950.opacity(0.64)       // --surface-scrim
-        static let surfaceScrimStrong = Primitive.night950.opacity(0.5)  // --surface-scrim-strong
-        static let surfaceTintBrand = Primitive.dawn500.opacity(0.08)    // --surface-tint-brand
+        static let surfaceDefault = Color(light: Primitive.paper0, dark: Primitive.night800)  // --surface-default
+        static let surfaceRaised = Color(light: Primitive.star100, dark: Primitive.night700)  // --surface-raised
+        static let surfaceHigh = Color(light: Primitive.star200, dark: Primitive.night600)  // --surface-high
+        static let surfaceOverlay = Color(light: Primitive.paper0.opacity(0.9), dark: Primitive.night900.opacity(0.88))  // --surface-overlay
+        static let surfaceDim = Color(light: Primitive.star200, dark: Primitive.night500)  // --surface-dim
+        static let surfaceScrim = Color(light: Primitive.night950.opacity(0.32), dark: Primitive.night950.opacity(0.64))  // --surface-scrim
+        static let surfaceScrimStrong = Color(light: Primitive.night950.opacity(0.38), dark: Primitive.night950.opacity(0.5))  // --surface-scrim-strong
+        static let surfaceTintBrand = Color(light: Primitive.dawn600.opacity(0.12), dark: Primitive.dawn500.opacity(0.08))  // --surface-tint-brand
 
-        static let borderSubtle = Primitive.night700  // --border-subtle
-        static let borderDefault = Primitive.night600  // --border-default
-        static let borderStrong = Primitive.night500   // --border-strong
+        static let borderSubtle = Color(light: Primitive.night700.opacity(0.08), dark: Primitive.night700)  // --border-subtle
+        static let borderDefault = Color(light: Primitive.night700.opacity(0.16), dark: Primitive.night600)  // --border-default
+        static let borderStrong = Color(light: Primitive.night700.opacity(0.28), dark: Primitive.night500)  // --border-strong
 
-        static let textPrimary = Primitive.star50     // --text-primary
-        static let textSecondary = Primitive.night100  // --text-secondary
-        static let textMuted = Primitive.night200      // --text-muted
-        static let textFaint = Primitive.night300      // --text-faint
-        static let textOnBrand = Primitive.night950    // --text-on-brand
+        static let textPrimary = Color(light: Primitive.night900, dark: Primitive.star50)  // --text-primary
+        static let textSecondary = Color(light: Primitive.night600, dark: Primitive.night100)  // --text-secondary
+        static let textMuted = Color(light: Primitive.night400, dark: Primitive.night200)  // --text-muted
+        static let textFaint = Color(light: Primitive.night300, dark: Primitive.night300)  // --text-faint: same value in both
+        static let textOnBrand = Color(light: Primitive.paper0, dark: Primitive.night950)  // --text-on-brand
 
-        static let brandPrimary = Primitive.dawn500          // --brand-primary
-        static let brandPrimaryHover = Primitive.dawn400     // --brand-primary-hover
-        static let brandPrimaryPressed = Primitive.dawn600   // --brand-primary-pressed
-        static let brandEmber = Primitive.ember500           // --brand-ember
+        static let brandPrimary = Color(light: Primitive.dawn800, dark: Primitive.dawn500)  // --brand-primary: dawn-800, dawn-500 would vanish on cream
+        static let brandPrimaryHover = Color(light: Primitive.dawn700, dark: Primitive.dawn400)  // --brand-primary-hover
+        static let brandPrimaryPressed = Color(light: Primitive.dawn800, dark: Primitive.dawn600)  // --brand-primary-pressed
+        static let brandEmber = Primitive.ember500  // --brand-ember: not in the light block
 
-        static let serviceYbira = Primitive.forest500       // --service-ybira
-        static let serviceYbiraSoft = Primitive.forest900   // --service-ybira-soft
-        static let serviceYbiraHover = Primitive.forest400  // --service-ybira-hover
-        static let serviceYbiraTint = Primitive.forest300   // --service-ybira-tint
-        static let serviceJaci = Primitive.moon500          // --service-jaci
-        static let serviceJaciSoft = Primitive.moon900      // --service-jaci-soft
-        static let serviceJaciTint = Primitive.moon400      // --service-jaci-tint
-        static let serviceNhaman = Primitive.sky500         // --service-nhaman
-        static let serviceVideo = Primitive.sky300          // --service-video
-        static let serviceGuara = Primitive.guara500        // --service-guara
+        static let serviceYbira = Color(light: Primitive.forest600, dark: Primitive.forest500)  // --service-ybira
+        static let serviceYbiraSoft = Color(light: Primitive.forest600.opacity(0.14), dark: Primitive.forest900)  // --service-ybira-soft
+        static let serviceYbiraHover = Color(light: Primitive.forest500, dark: Primitive.forest400)  // --service-ybira-hover
+        static let serviceYbiraTint = Color(light: Primitive.forest700, dark: Primitive.forest300)  // --service-ybira-tint
+        static let serviceJaci = Color(light: Primitive.moon600, dark: Primitive.moon500)  // --service-jaci
+        static let serviceJaciSoft = Color(light: Primitive.moon600.opacity(0.18), dark: Primitive.moon900)  // --service-jaci-soft
+        static let serviceJaciTint = Color(light: Primitive.moon700, dark: Primitive.moon400)  // --service-jaci-tint
+        static let serviceNhaman = Color(light: Primitive.sky600, dark: Primitive.sky500)  // --service-nhaman
+        static let serviceVideo = Color(light: Primitive.sky600, dark: Primitive.sky300)  // --service-video
+        static let serviceGuara = Color(light: Primitive.guara600, dark: Primitive.guara500)  // --service-guara
+        // Maraca (identity, access) does not borrow the other services' accent: it has its own.
+        static let serviceMaraca = Color(light: Primitive.ember600, dark: Primitive.ember500)  // --service-maraca
+        static let serviceMaracaSoft = Color(light: Primitive.ember600.opacity(0.14), dark: Primitive.ember500.opacity(0.16))  // --service-maraca-soft
+        static let serviceMaracaTint = Color(light: Primitive.ember600, dark: Primitive.ember400)  // --service-maraca-tint
 
-        static let feedbackSuccess = Primitive.forest400  // --feedback-success
-        static let feedbackWarning = Primitive.amber500   // --feedback-warning
-        static let feedbackError = Primitive.red500       // --feedback-error
-        static let feedbackInfo = Primitive.sky500        // --feedback-info
+        static let feedbackSuccess = Color(light: Primitive.forest600, dark: Primitive.forest400)  // --feedback-success
+        static let feedbackWarning = Color(light: Primitive.amber700, dark: Primitive.amber500)  // --feedback-warning
+        static let feedbackError = Color(light: Primitive.red600, dark: Primitive.red500)  // --feedback-error
+        static let feedbackInfo = Color(light: Primitive.sky600, dark: Primitive.sky500)  // --feedback-info
 
         // Translucent tints for the deterministic avatar colors (hash -> 0..3).
-        static let avatarTint0 = Primitive.dawn500.opacity(0.16)    // --avatar-tint-0
-        static let avatarTint1 = Primitive.forest500.opacity(0.16)  // --avatar-tint-1
-        static let avatarTint2 = Primitive.moon500.opacity(0.16)    // --avatar-tint-2
-        static let avatarTint3 = Primitive.sky500.opacity(0.16)     // --avatar-tint-3
+        static let avatarTint0 = Color(light: Primitive.dawn600.opacity(0.18), dark: Primitive.dawn500.opacity(0.16))  // --avatar-tint-0
+        static let avatarTint1 = Color(light: Primitive.forest600.opacity(0.18), dark: Primitive.forest500.opacity(0.16))  // --avatar-tint-1
+        static let avatarTint2 = Color(light: Primitive.moon600.opacity(0.2), dark: Primitive.moon500.opacity(0.16))  // --avatar-tint-2
+        static let avatarTint3 = Color(light: Primitive.sky600.opacity(0.18), dark: Primitive.sky500.opacity(0.16))  // --avatar-tint-3
 
-        static let fieldBg = Primitive.night800.opacity(0.6)  // --field-bg
+        static let fieldBg = Color(light: Primitive.paper0.opacity(0.8), dark: Primitive.night800.opacity(0.6))  // --field-bg
     }
 
     /// The type-* styles, with the weight, tracking and line-height from
@@ -317,6 +335,16 @@ extension View {
             .tracking(style.tracking)
             .lineSpacing(style.lineSpacing)
             .textCase(style.uppercase ? .uppercase : nil)
+    }
+}
+
+extension Color {
+    /// One semantic token: the light value and the dark value, from the two
+    /// blocks of design/tokens.css. The system picks.
+    init(light: Color, dark: Color) {
+        self.init(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
+        })
     }
 }
 
