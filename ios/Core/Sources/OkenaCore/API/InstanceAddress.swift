@@ -3,10 +3,14 @@ import Foundation
 /// The community's box address, validated before anything touches the
 /// network. One box serves one community, so there is one address.
 ///
-/// The box is reached over HTTPS through its own Caddy in the normal
-/// install, and a pilot box on the LAN is reached by name. Allowing
-/// cleartext to arbitrary hosts would be a downgrade, so `http` is accepted
-/// only for local addresses.
+/// The person types where their box lives, and the app cannot know that at
+/// build time, so `http` is accepted for any host. What it is not is silent:
+/// `isCleartext` is what the screens read to say so. A rule that only trust
+/// "local" names was tried first and it refused real boxes: a tailnet name
+/// such as `taina.yby` is fully qualified, and it is exactly where a pilot
+/// box lives. Over a private network (a tailnet, a VPN) the path is already
+/// encrypted under the app's feet; over an open one it is not, and the person
+/// owns both ends, so the decision is theirs and it is stated out loud.
 public struct InstanceAddress: Equatable, Sendable {
     /// Always scheme and host, no path, no query, no fragment.
     public let url: URL
@@ -41,9 +45,6 @@ public struct InstanceAddress: Equatable, Sendable {
         if components.user != nil || components.password != nil {
             return .failure(.invalidAddress(.malformed))
         }
-        if components.scheme == "http" && !isLocal(host) {
-            return .failure(.invalidAddress(.insecure))
-        }
 
         var clean = URLComponents()
         clean.scheme = components.scheme
@@ -60,39 +61,8 @@ public struct InstanceAddress: Equatable, Sendable {
         url.host() ?? ""
     }
 
-    /// Cleartext cannot leak past the LAN when the name cannot leave it:
-    /// localhost, an unqualified name, a `.local` name, or a private or
-    /// loopback IP literal.
-    private static func isLocal(_ host: String) -> Bool {
-        var lowered = host.lowercased()
-        // URLComponents keeps the brackets of an IPv6 literal.
-        if lowered.hasPrefix("["), lowered.hasSuffix("]") {
-            lowered = String(lowered.dropFirst().dropLast())
-        }
-        if lowered == "localhost" || (!lowered.contains(".") && !lowered.contains(":")) {
-            return true
-        }
-        if lowered.hasSuffix(".local") {
-            return true
-        }
-        if lowered == "::1" || lowered.hasPrefix("fe80:") || lowered.hasPrefix("fd") {
-            return true
-        }
-        return isPrivateIPv4(lowered)
-    }
-
-    private static func isPrivateIPv4(_ host: String) -> Bool {
-        let parts = host.split(separator: ".").compactMap { Int($0) }
-        guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) else {
-            return false
-        }
-        switch (parts[0], parts[1]) {
-        case (10, _), (127, _), (169, 254), (192, 168):
-            return true
-        case (172, 16...31):
-            return true
-        default:
-            return false
-        }
+    /// The box answers without TLS. Shown wherever the host is, never hidden.
+    public var isCleartext: Bool {
+        url.scheme?.lowercased() == "http"
     }
 }

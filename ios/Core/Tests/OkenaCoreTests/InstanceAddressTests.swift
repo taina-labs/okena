@@ -45,13 +45,28 @@ import Testing
     }
 }
 
-@Test func boundaryOfPrivateRangeIsInsecure() {
-    #expect(InstanceAddress.parse(input: "http://172.32.0.1").error == .invalidAddress(.insecure))
-    #expect(InstanceAddress.parse(input: "http://11.0.0.5").error == .invalidAddress(.insecure))
+@Test func cleartextIsAcceptedOnAnyHost() {
+    // A tailnet or LAN name with a dot is not "local" to any rule we could
+    // write down, and it is where real pilot boxes live (taina.yby). It was
+    // refused here once; the test keeps the refusal from coming back.
+    let tailnet = InstanceAddress.parse(input: "http://taina.yby")
+    #expect(tailnet.value?.url.absoluteString == "http://taina.yby")
+    #expect(tailnet.value?.isCleartext == true)
+
+    #expect(InstanceAddress.parse(input: "http://exemplo.com").value?.isCleartext == true)
+    #expect(InstanceAddress.parse(input: "http://172.32.0.1").value != nil)
+    #expect(InstanceAddress.parse(input: "http://11.0.0.5").value != nil)
 }
 
-@Test func publicNameOverHTTPIsInsecure() {
-    #expect(InstanceAddress.parse(input: "http://exemplo.com").error == .invalidAddress(.insecure))
+@Test func httpsIsNotCleartext() {
+    #expect(InstanceAddress.parse(input: "https://exemplo.com").value?.isCleartext == false)
+    #expect(InstanceAddress.parse(input: "exemplo.com").value?.isCleartext == false)
+}
+
+@Test func cleartextKeepsThePort() {
+    let parsed = InstanceAddress.parse(input: "http://taina.yby:4000")
+    #expect(parsed.value?.url.absoluteString == "http://taina.yby:4000")
+    #expect(parsed.value?.display == "taina.yby")
 }
 
 @Test func httpsIsAlwaysAccepted() {

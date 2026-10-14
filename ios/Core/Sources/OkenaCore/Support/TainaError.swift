@@ -46,7 +46,6 @@ public enum AddressProblem: String, Equatable, Sendable {
     case empty
     case malformed
     case unsupportedScheme
-    case insecure
 
     /// One sentence, with a way out.
     public var message: String {
@@ -54,7 +53,6 @@ public enum AddressProblem: String, Equatable, Sendable {
         case .empty: "Informe o endereço da comunidade, por exemplo taina.minhacasa.ts.net."
         case .malformed: "Este endereço não pôde ser lido. Use algo como taina.minhacasa.ts.net."
         case .unsupportedScheme: "Use o endereço da comunidade, por exemplo taina.minhacasa.ts.net."
-        case .insecure: "Sem criptografia só vale dentro da rede local. Fora dela, use o endereço https da comunidade."
         }
     }
 }
