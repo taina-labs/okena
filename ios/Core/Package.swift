@@ -10,5 +10,6 @@ let package = Package(
     targets: [
         .target(name: "OkenaCore"),
         .testTarget(name: "OkenaCoreTests", dependencies: ["OkenaCore"]),
+        .executableTarget(name: "okena-smoke", dependencies: ["OkenaCore"], path: "Smoke"),
     ]
 )

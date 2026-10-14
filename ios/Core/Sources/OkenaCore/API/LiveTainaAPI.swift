@@ -136,7 +136,11 @@ public struct LiveTainaAPI: TainaAPI {
     }
 
     public func thumbnail(rkey: String, size: ThumbnailSize) async -> TainaResult<Data> {
-        await prepared(path: "files/\(rkey)/thumbnail/\(size.rawValue)", authenticated: true, accept: "image/webp")
+        // No type asked for, on purpose: the API pipeline negotiates JSON
+        // only, so a request that says `Accept: image/webp` is answered 406
+        // before the controller runs. The endpoint's type is fixed and
+        // documented, so the client asks for anything.
+        await prepared(path: "files/\(rkey)/thumbnail/\(size.rawValue)", authenticated: true, accept: "*/*")
             .then { request in
                 await self.transport.send(request).then { http in
                     guard http.isSuccess else {

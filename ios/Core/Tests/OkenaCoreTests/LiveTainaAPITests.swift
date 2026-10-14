@@ -38,8 +38,36 @@ private func signedInAPI(
     return (api, stub)
 }
 
-@Test func buildProducesThePathAcceptAndNoToken() {
-    let built = LiveTainaAPI.build(base: URL(string: "https://box")!, "instance")
+/// The API pipeline negotiates JSON only (`plug :accepts, ["json"]`), so a
+/// request that asks for `image/webp` is answered 406 before the controller
+/// runs: found against a live box, where every thumbnail call came back as
+/// `internal_error`. The client asks for anything instead.
+@Test func thumbnailDoesNotAskForATypeThePipelineCannotNegotiate() async throws {
+    let (api, stub) = try await signedInAPI { _ in
+        .success(http(URL(string: "https://box/api/v1/files/3n4b9uxrw6a3/thumbnail/sm"), 200))
+    }
+    _ = await api.thumbnail(rkey: "3n4b9uxrw6a3", size: .sm)
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.value(forHTTPHeaderField: "Accept") == "*/*")
+    #expect(request.url?.absoluteString == "https://box/api/v1/files/3n4b9uxrw6a3/thumbnail/sm")
+}
+
+/// A file without a rendition is a body-less 404 on the box, not the
+/// envelope. It still has to come back as an API error with the status, so a
+/// screen can tell "no thumbnail" from "nothing answered".
+@Test func thumbnailWithoutARenditionIsAnAPIErrorWithTheStatus() async throws {
+    let (api, _) = try await signedInAPI { _ in
+        .success(http(URL(string: "https://box/api/v1/files/3n4b9uxrw6a3/thumbnail/sm"), 404))
+    }
+    guard case .failure(.api(let error)) = await api.thumbnail(rkey: "3n4b9uxrw6a3", size: .sm) else {
+        Issue.record("expected an API error for a body-less 404")
+        return
+    }
+    #expect(error.status == 404)
+}
+
+@Test func buildProducesThePathAcceptAndNoToken() {    let built = LiveTainaAPI.build(base: URL(string: "https://box")!, "instance")
     let request = built.value
     #expect(request?.url?.absoluteString == "https://box/api/v1/instance")
     #expect(request?.value(forHTTPHeaderField: "Authorization") == nil)
