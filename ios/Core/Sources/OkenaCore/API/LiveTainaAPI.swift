@@ -60,12 +60,79 @@ public struct LiveTainaAPI: TainaAPI {
         }
     }
 
+    public func devices() async -> TainaResult<[DeviceToken]> {
+        await prepared(path: "devices", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                await self.respond(http, Page<DeviceToken>.self, label: "devices").then { page in
+                    .success(page.items)
+                }
+            }
+        }
+    }
+
+    public func revokeDevice(id: String) async -> TainaResult<Void> {
+        await prepared(path: "devices/\(id)", method: "DELETE", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respondEmpty(http)
+            }
+        }
+    }
+
     public func listFolders() async -> TainaResult<[Folder]> {
         await prepared(path: "folders", authenticated: true).then { request in
             await self.transport.send(request).then { http in
                 await self.respond(http, Page<Folder>.self, label: "folders").then { page in
                     .success(page.items)
                 }
+            }
+        }
+    }
+
+    public func folder(rkey: String) async -> TainaResult<Folder> {
+        await prepared(path: "folders/\(rkey)", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Folder.self, label: "folder")
+            }
+        }
+    }
+
+    public func updateFolder(rkey: String, name: String?, zona: Zona?) async -> TainaResult<Folder> {
+        struct Patch: Encodable {
+            let name: String?
+            let zona: Zona?
+        }
+
+        guard let body = try? APICoding.encoder.encode(Patch(name: name, zona: zona)) else {
+            return .failure(.invalidResponse("folder patch body"))
+        }
+        return await prepared(path: "folders/\(rkey)", method: "PATCH", body: body, contentType: "application/json", authenticated: true)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respond(http, Folder.self, label: "folder")
+                }
+            }
+    }
+
+    public func moveFolder(rkey: String, parentRkey: String?) async -> TainaResult<Folder> {
+        struct Move: Encodable {
+            let parentRkey: String?
+        }
+
+        guard let body = try? APICoding.encoder.encode(Move(parentRkey: parentRkey)) else {
+            return .failure(.invalidResponse("folder move body"))
+        }
+        return await prepared(path: "folders/\(rkey)/move", method: "POST", body: body, contentType: "application/json", authenticated: true)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respond(http, Folder.self, label: "folder")
+                }
+            }
+    }
+
+    public func deleteFolder(rkey: String) async -> TainaResult<Void> {
+        await prepared(path: "folders/\(rkey)", method: "DELETE", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respondEmpty(http)
             }
         }
     }
@@ -127,6 +194,66 @@ public struct LiveTainaAPI: TainaAPI {
         }
     }
 
+    public func file(rkey: String) async -> TainaResult<File> {
+        await prepared(path: "files/\(rkey)", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, File.self, label: "file")
+            }
+        }
+    }
+
+    public func updateFile(rkey: String, name: String?, zona: Zona?) async -> TainaResult<File> {
+        struct Patch: Encodable {
+            let name: String?
+            let zona: Zona?
+        }
+
+        guard let body = try? APICoding.encoder.encode(Patch(name: name, zona: zona)) else {
+            return .failure(.invalidResponse("file patch body"))
+        }
+        return await prepared(path: "files/\(rkey)", method: "PATCH", body: body, contentType: "application/json", authenticated: true)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respond(http, File.self, label: "file")
+                }
+            }
+    }
+
+    public func moveFile(rkey: String, folderRkey: String?) async -> TainaResult<File> {
+        // The wire key is `folder`, so the property carries the name itself;
+        // `folderRkey` would encode as `folder_rkey`, which is not the key.
+        struct Move: Encodable {
+            let folder: String?
+        }
+
+        guard let body = try? APICoding.encoder.encode(Move(folder: folderRkey)) else {
+            return .failure(.invalidResponse("file move body"))
+        }
+        return await prepared(path: "files/\(rkey)/move", method: "POST", body: body, contentType: "application/json", authenticated: true)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respond(http, File.self, label: "file")
+                }
+            }
+    }
+
+    public func deleteFile(rkey: String) async -> TainaResult<Void> {
+        await prepared(path: "files/\(rkey)", method: "DELETE", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respondEmpty(http)
+            }
+        }
+    }
+
+    public func recent(limit: Int?) async -> TainaResult<Page<File>> {
+        let query: [String: String?] = ["limit": limit.map(String.init)]
+        return await prepared(path: "recent", query: query, authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Page<File>.self, label: "recent")
+            }
+        }
+    }
+
     public func download(rkey: String) async -> TainaResult<URL> {
         await prepared(path: "files/\(rkey)/download", authenticated: true, accept: nil).then { request in
             await self.transport.download(request).then { http in
@@ -149,6 +276,142 @@ public struct LiveTainaAPI: TainaAPI {
                     return .success(http.data)
                 }
             }
+    }
+
+    public func trash(limit: Int?, cursor: String?) async -> TainaResult<Page<File>> {
+        let query: [String: String?] = [
+            "limit": limit.map(String.init),
+            "cursor": cursor,
+        ]
+        return await prepared(path: "trash", query: query, authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Page<File>.self, label: "trash")
+            }
+        }
+    }
+
+    public func restoreFile(rkey: String) async -> TainaResult<File> {
+        await prepared(path: "trash/\(rkey)/restore", method: "POST", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, File.self, label: "restored file")
+            }
+        }
+    }
+
+    public func photos(limit: Int?, cursor: String?) async -> TainaResult<Page<File>> {
+        let query: [String: String?] = [
+            "limit": limit.map(String.init),
+            "cursor": cursor,
+        ]
+        return await prepared(path: "photos", query: query, authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Page<File>.self, label: "photos")
+            }
+        }
+    }
+
+    public func photoTimeline(limit: Int?, cursor: String?) async -> TainaResult<Page<TimelineGroup>> {
+        let query: [String: String?] = [
+            "limit": limit.map(String.init),
+            "cursor": cursor,
+        ]
+        return await prepared(path: "photos/timeline", query: query, authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Page<TimelineGroup>.self, label: "timeline")
+            }
+        }
+    }
+
+    public func accessTarget(fileRkey: String) async -> TainaResult<AccessTarget> {
+        await prepared(path: "files/\(fileRkey)/access-target", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, AccessTarget.self, label: "access target")
+            }
+        }
+    }
+
+    public func requestAccess(fileRkey: String, motivo: String?) async -> TainaResult<Pedido> {
+        struct Ask: Encodable {
+            let motivo: String?
+        }
+
+        guard let body = try? APICoding.encoder.encode(Ask(motivo: motivo)) else {
+            return .failure(.invalidResponse("access request body"))
+        }
+        return await prepared(path: "files/\(fileRkey)/access-request", method: "POST", body: body, contentType: "application/json", authenticated: true)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respond(http, Pedido.self, label: "access request")
+                }
+            }
+    }
+
+    public func accessRequests() async -> TainaResult<Page<Pedido>> {
+        await prepared(path: "access-requests", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Page<Pedido>.self, label: "access requests")
+            }
+        }
+    }
+
+    public func myRequests() async -> TainaResult<Page<Pedido>> {
+        await prepared(path: "my-requests", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Page<Pedido>.self, label: "my requests")
+            }
+        }
+    }
+
+    public func approveRequest(id: String) async -> TainaResult<Concessao> {
+        await prepared(path: "access-requests/\(id)/approve", method: "POST", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Concessao.self, label: "concessao")
+            }
+        }
+    }
+
+    public func denyRequest(id: String) async -> TainaResult<Pedido> {
+        await prepared(path: "access-requests/\(id)/deny", method: "POST", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Pedido.self, label: "pedido")
+            }
+        }
+    }
+
+    public func mural(limit: Int?, cursor: String?) async -> TainaResult<Page<MuralEntry>> {
+        let query: [String: String?] = [
+            "limit": limit.map(String.init),
+            "cursor": cursor,
+        ]
+        return await prepared(path: "mural", query: query, authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Page<MuralEntry>.self, label: "mural")
+            }
+        }
+    }
+
+    public func storage() async -> TainaResult<StorageStats> {
+        await prepared(path: "storage", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, StorageStats.self, label: "storage")
+            }
+        }
+    }
+
+    public func saude() async -> TainaResult<Saude> {
+        await prepared(path: "saude", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Saude.self, label: "saude")
+            }
+        }
+    }
+
+    public func members() async -> TainaResult<Page<Ava>> {
+        await prepared(path: "members", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Page<Ava>.self, label: "members")
+            }
+        }
     }
 
     // MARK: internals
