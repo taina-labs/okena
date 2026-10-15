@@ -1,14 +1,21 @@
 import OkenaCore
 import SwiftUI
 
-/// The account: who is acting, which device, which community, and the way
+/// The account: who is acting, which devices, which community, and the way
 /// out. Signing out is a DELETE /session, so the dialog says the aparelho
-/// loses access.
+/// loses access. The devices are the account's own: each aparelho that is
+/// not this one can be revoked, with a confirmation and the box's word on
+/// failure.
 struct AccountView: View {
     @Environment(SessionModel.self) private var session
 
     @State private var confirming = false
     @State private var leaving = false
+    @State private var devices: [DeviceToken]?
+    @State private var devicesError: TainaError?
+    @State private var confirmingRevoke: DeviceToken?
+    @State private var revoking = false
+    @State private var failure: TainaError?
 
     var body: some View {
         Group {
@@ -21,6 +28,7 @@ struct AccountView: View {
         .background(Theme.Palette.bgApp)
         .navigationTitle("Conta")
         .task { await session.probe() }
+        .task { await loadDevices() }
         .confirmationDialog("Sair da comunidade?", isPresented: $confirming, titleVisibility: .visible) {
             Button("Sair", role: .destructive) {
                 Task { await leave() }
@@ -28,6 +36,34 @@ struct AccountView: View {
             Button("Ficar", role: .cancel) {}
         } message: {
             Text("Ao sair, este aparelho perde o acesso à comunidade. Para voltar, entre de novo com o seu usuário e senha.")
+        }
+        .confirmationDialog(
+            "Revogar o acesso deste aparelho?",
+            isPresented: Binding(
+                get: { confirmingRevoke != nil },
+                set: { if !$0 { confirmingRevoke = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: confirmingRevoke
+        ) { device in
+            Button("Revogar", role: .destructive) {
+                Task { await revoke(device) }
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: { device in
+            Text("\"\(device.name)\" perde o acesso à comunidade. Para voltar, é preciso entrar de novo nele.")
+        }
+        .alert(
+            "Não deu certo",
+            isPresented: Binding(
+                get: { failure != nil },
+                set: { if !$0 { failure = nil } }
+            ),
+            presenting: failure
+        ) { _ in
+            Button("Entendi", role: .cancel) {}
+        } message: { error in
+            Text(error.errorDescription ?? "Algo deu errado. Tente de novo.")
         }
     }
 
@@ -49,20 +85,8 @@ struct AccountView: View {
                         }
                     }
                 }
-                if let device = me.device {
-                    section("Aparelho") {
-                        RowCard {
-                            VStack(alignment: .leading, spacing: Theme.Space.space2) {
-                                Text(device.name)
-                                    .typeStyle(Theme.Text.label)
-                                    .foregroundStyle(Theme.Palette.textPrimary)
-                                Text(device.publicId)
-                                    .typeStyle(Theme.Text.monoSm)
-                                    .foregroundStyle(Theme.Palette.textMuted)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
+                section("Aparelhos") {
+                    devicesSection(current: me.device)
                 }
                 section("Comunidade") {
                     RowCard {
@@ -111,6 +135,83 @@ struct AccountView: View {
         }
     }
 
+    @ViewBuilder
+    private func devicesSection(current: DeviceToken?) -> some View {
+        if let error = devicesError {
+            ErrorView(error: error, retry: { await loadDevices() })
+        } else if let devices {
+            if devices.isEmpty {
+                EmptyStateView(
+                    systemImage: "iphone",
+                    title: "Nenhum aparelho",
+                    message: "Os aparelhos que entram na sua conta aparecem aqui."
+                )
+            } else {
+                VStack(spacing: Theme.Space.space2) {
+                    ForEach(devices, id: \.publicId) { device in
+                        deviceRow(device, current: current)
+                    }
+                }
+            }
+        } else {
+            RowCard {
+                HStack {
+                    ProgressView()
+                        .tint(Theme.Palette.textMuted)
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private func deviceRow(_ device: DeviceToken, current: DeviceToken?) -> some View {
+        RowCard {
+            VStack(alignment: .leading, spacing: Theme.Space.space2) {
+                HStack {
+                    Text(device.name)
+                        .typeStyle(Theme.Text.label)
+                        .foregroundStyle(Theme.Palette.textPrimary)
+                        .lineLimit(1)
+                    Spacer()
+                    if device.publicId == current?.publicId {
+                        Text("Este aparelho")
+                            .typeStyle(Theme.Text.caption)
+                            .foregroundStyle(Theme.Palette.textSecondary)
+                    }
+                }
+                Text(Self.deviceLine(device))
+                    .typeStyle(Theme.Text.monoSm)
+                    .foregroundStyle(device.revokedAt == nil ? Theme.Palette.textSecondary : Theme.Palette.textMuted)
+                if device.publicId == current?.publicId {
+                    Text(device.publicId)
+                        .typeStyle(Theme.Text.monoSm)
+                        .foregroundStyle(Theme.Palette.textMuted)
+                        .textSelection(.enabled)
+                }
+                if device.revokedAt == nil, device.publicId != current?.publicId {
+                    SecondaryButton(
+                        title: "Revogar",
+                        textColor: Theme.Palette.feedbackError
+                    ) {
+                        confirmingRevoke = device
+                    }
+                    .disabled(revoking)
+                }
+            }
+        }
+    }
+
+    /// One line per aparelho: revoked when it is, the last use otherwise.
+    private static func deviceLine(_ device: DeviceToken) -> String {
+        if let revoked = device.revokedAt {
+            return "Revogado em " + Format.date(revoked)
+        }
+        if let used = device.lastUsedAt {
+            return "Último uso em " + Format.date(used)
+        }
+        return "Nunca usado"
+    }
+
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.space2) {
             Text(title)
@@ -118,6 +219,36 @@ struct AccountView: View {
                 .foregroundStyle(Theme.Palette.textMuted)
             content()
         }
+    }
+
+    private func loadDevices() async {
+        let result = await session.api.devices()
+        switch await session.screen(result) {
+        case .success(let found):
+            devices = found
+            devicesError = nil
+        case .failure(let error):
+            // With a list already on screen, the failure is the alert, not
+            // a replacement of the section.
+            if devices == nil {
+                devicesError = error
+            } else {
+                failure = error
+            }
+        }
+    }
+
+    private func revoke(_ device: DeviceToken) async {
+        revoking = true
+        failure = nil
+        let result = await session.api.revokeDevice(id: device.publicId)
+        switch await session.screen(result) {
+        case .success:
+            await loadDevices()
+        case .failure(let error):
+            failure = error
+        }
+        revoking = false
     }
 
     private func leave() async {
