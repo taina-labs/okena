@@ -76,9 +76,11 @@ struct AccountView: View {
                             Text(me.ava.label)
                                 .typeStyle(Theme.Text.h3)
                                 .foregroundStyle(Theme.Palette.textPrimary)
-                            Text("@\(me.ava.username)")
-                                .typeStyle(Theme.Text.monoSm)
-                                .foregroundStyle(Theme.Palette.textMuted)
+                            if let username = me.ava.username {
+                                Text("@\(username)")
+                                    .typeStyle(Theme.Text.monoSm)
+                                    .foregroundStyle(Theme.Palette.textMuted)
+                            }
                             Text(me.ava.papel.label)
                                 .typeStyle(Theme.Text.bodySm)
                                 .foregroundStyle(Theme.Palette.textSecondary)

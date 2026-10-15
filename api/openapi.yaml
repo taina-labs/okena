@@ -1224,6 +1224,8 @@ components:
           description: O id público de pessoa, 12 caracteres URL-safe.
         username:
           type: string
+          nullable: true
+          description: O nome de usuario; nulo num convite ainda nao aceito.
         display_name:
           type: string
           nullable: true

@@ -750,3 +750,22 @@ private func signedInAPI(
     let request = try #require(await stub.recorder.requests().first)
     #expect(request.url?.absoluteString == "https://box/api/v1/members")
 }
+
+/// A pending invite has no username yet: the box returns it with
+/// `username: null`, so the roster must still decode and the row falls back
+/// to the invite's own words (the web's `display_name/1`).
+@Test func membersDecodesAPendingInviteWithNoUsername() async throws {
+    let pending = """
+    {"public_id":"avatk9x2m5qp7w","username":null,"display_name":null,"papel":"morador","activated_at":null,"deactivated_at":null,"created_at":"2026-10-13T09:00:00Z"}
+    """
+    let page = "{\"items\":[\(anaJSON),\(pending)],\"next_cursor\":null}"
+
+    let (api, _) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/members"), 200, body: page))
+    })
+
+    let decoded = try #require(await api.members().value)
+    #expect(decoded.items.count == 2)
+    #expect(decoded.items.last?.username == nil)
+    #expect(decoded.items.last?.label == "Convite pendente")
+}

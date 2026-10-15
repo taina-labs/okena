@@ -15,7 +15,7 @@ public enum Papel: String, Codable, Sendable, CaseIterable {
 /// The person inside a Tekoa.
 public struct Ava: Codable, Sendable, Equatable {
     public let publicId: String
-    public let username: String
+    public let username: String?
     public let displayName: String?
     public let papel: Papel
     public let activatedAt: String?
@@ -23,9 +23,11 @@ public struct Ava: Codable, Sendable, Equatable {
     public let createdAt: String
 
     /// What a row shows: the display name when there is one, the username
-    /// otherwise. Pure, so the UI does not repeat the rule.
+    /// otherwise, and the invite's own words while the person has not
+    /// chosen a name yet (the web's `display_name/1`). Pure, so the UI does
+    /// not repeat the rule.
     public var label: String {
-        displayName ?? username
+        displayName ?? username ?? "Convite pendente"
     }
 }
 
