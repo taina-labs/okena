@@ -50,6 +50,7 @@ private struct TrashList: View {
                 list
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Palette.bgApp)
         // Loads on appear and on pull: the list owns its own loading.
         .task { await model.load() }

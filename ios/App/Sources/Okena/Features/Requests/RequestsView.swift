@@ -79,6 +79,7 @@ struct RequestsList: View {
                 section(model.sections.sent, empty: sentEmpty, rows: sentRows)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Palette.bgApp)
         // Loads on appear and on pull: the screen owns its own loading.
         .task { await model.load() }

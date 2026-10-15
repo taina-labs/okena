@@ -47,6 +47,7 @@ struct MemberList: View {
                 list
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Palette.bgApp)
         .task { await model.load() }
         .refreshable { await model.load() }

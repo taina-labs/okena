@@ -17,6 +17,7 @@ struct HomeView: View {
                 LoadingView()
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Palette.bgApp)
         // The greeting block is the title of this screen; the bar stays out
         // of the way.

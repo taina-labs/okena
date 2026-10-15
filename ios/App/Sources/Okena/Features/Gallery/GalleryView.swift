@@ -37,6 +37,7 @@ struct GalleryContent: View {
                 content(width: geo.size.width)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Palette.bgApp)
         .task(id: model.tab) { await model.ensureLoaded() }
         .fullScreenCover(isPresented: viewerBinding) {
