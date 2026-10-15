@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The switch on the session: the three states before the app, and the two
-/// tabs after it, each in its own stack.
+/// The switch on the session: the three states before the app, and the
+/// authenticated shell after it.
 struct RootView: View {
     @Environment(SessionModel.self) private var session
 
@@ -15,19 +15,8 @@ struct RootView: View {
         case .needsLogin:
             LoginView()
         case .ready:
-            TabView {
-                Tab("Arquivos", systemImage: "folder") {
-                    NavigationStack {
-                        FilesView()
-                    }
-                }
-                Tab("Conta", systemImage: "person") {
-                    NavigationStack {
-                        AccountView()
-                    }
-                }
-            }
-            .background(Theme.Palette.bgApp)
+            ShellView()
+                .background(Theme.Palette.bgApp)
         }
     }
 }
