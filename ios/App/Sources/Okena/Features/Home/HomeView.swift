@@ -109,7 +109,7 @@ struct HomeView: View {
             section("Mural") {
                 VStack(spacing: Theme.Space.space2) {
                     ForEach(model.mural) { line in
-                        MuralRow(line: line)
+                        MuralTeaserRow(line: line)
                     }
                 }
             }
@@ -279,7 +279,7 @@ struct RecentRow: View {
 }
 
 /// One mural teaser line: the sentence and when it happened.
-struct MuralRow: View {
+private struct MuralTeaserRow: View {
     let line: HomeModel.MuralLine
 
     var body: some View {
