@@ -48,6 +48,7 @@ private struct MuralList: View {
                 list
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Palette.bgApp)
         // Loads on appear and on pull: the list owns its own loading.
         .task { await model.load() }
@@ -61,7 +62,7 @@ private struct MuralList: View {
                     .typeStyle(Theme.Text.bodySm)
                     .foregroundStyle(Theme.Palette.textMuted)
                 ForEach(model.entries, id: \.cid) { entry in
-                    MuralRow(entry: entry)
+                    MuralRow(sentence: model.sentence(for: entry), ago: Format.relative(entry.createdAt))
                 }
                 sentinel
             }
@@ -94,22 +95,18 @@ private struct MuralList: View {
     }
 }
 
-/// One entry: the act in words, the payload's own detail, and when.
+/// One entry: the act in words, and when. The sentence is the web's own,
+/// from the shared table; the chain's ids never reach the screen.
 private struct MuralRow: View {
-    let entry: MuralEntry
+    let sentence: String
+    let ago: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.space1) {
-            Text(MuralModel.label(for: entry))
-                .typeStyle(Theme.Text.label)
+            Text(sentence)
+                .typeStyle(Theme.Text.body)
                 .foregroundStyle(Theme.Palette.textPrimary)
-            let summary = MuralModel.summary(from: entry.payload)
-            if !summary.isEmpty {
-                Text(summary)
-                    .typeStyle(Theme.Text.bodySm)
-                    .foregroundStyle(Theme.Palette.textSecondary)
-            }
-            Text(Format.relative(entry.createdAt))
+            Text(ago)
                 .typeStyle(Theme.Text.caption)
                 .foregroundStyle(Theme.Palette.textFaint)
         }
