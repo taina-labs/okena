@@ -7,36 +7,29 @@ struct MoreView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Theme.Space.space3) {
-                row("Moradores", "person.2") {
-                    MembersView()
-                }
-                row("Armazenamento", "externaldrive") {
-                    StorageView()
-                }
-                row("Saúde", "waveform.path.ecg") {
-                    SaudeView()
-                }
-                row("Pedidos de acesso", "tray.full") {
-                    RequestsView()
-                }
-                row("Conta", "person.crop.circle") {
-                    AccountView()
-                }
+                row("Moradores", "person.2", value: .moradores)
+                row("Armazenamento", "externaldrive", value: .armazenamento)
+                row("Saúde", "waveform.path.ecg", value: .saude)
+                row("Pedidos de acesso", "tray.full", value: .pedidos)
+                row("Conta", "person.crop.circle", value: .conta)
             }
             .padding(Theme.Space.space4)
         }
         .background(Theme.Palette.bgApp)
         .navigationTitle("Mais")
+        .navigationDestination(for: MoreRoute.self) { route in
+            switch route {
+            case .moradores: MembersView()
+            case .armazenamento: StorageView()
+            case .saude: SaudeView()
+            case .pedidos: RequestsView()
+            case .conta: AccountView()
+            }
+        }
     }
 
-    private func row<Destination: View>(
-        _ title: String,
-        _ systemImage: String,
-        @ViewBuilder destination: () -> Destination
-    ) -> some View {
-        NavigationLink {
-            destination()
-        } label: {
+    private func row(_ title: String, _ systemImage: String, value: MoreRoute) -> some View {
+        NavigationLink(value: value) {
             RowCard {
                 HStack(spacing: Theme.Space.space3) {
                     Image(systemName: systemImage)

@@ -33,6 +33,7 @@ struct BrowserList: View {
     @State private var newFolderName = ""
     @State private var showingImporter = false
     @State private var alertMessage: String?
+    @State private var showingTrash = BrowserList.initialShowingTrash()
 
     var body: some View {
         Group {
@@ -48,8 +49,12 @@ struct BrowserList: View {
                 list
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Palette.bgApp)
         .toolbar { toolbar }
+        .navigationDestination(isPresented: $showingTrash) {
+            TrashView()
+        }
         // Loads on appear and on pull: the list owns its own loading, for
         // the root and for any folder.
         .task { await model.load() }
@@ -147,6 +152,13 @@ struct BrowserList: View {
                 Label("Nova pasta", systemImage: "folder.badge.plus")
             }
         }
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                showingTrash = true
+            } label: {
+                Label("Lixeira", systemImage: "trash")
+            }
+        }
         ToolbarItem(placement: .topBarTrailing) {
             if model.uploading {
                 ProgressView()
@@ -158,6 +170,17 @@ struct BrowserList: View {
                 }
             }
         }
+    }
+
+    /// In DEBUG, `TAINA_FILES=lixeira` opens the Lixeira on launch, the same
+    /// seam the shell uses, so a script or a UI test reaches it without
+    /// tapping. The running app reaches it through the toolbar.
+    private static func initialShowingTrash() -> Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["TAINA_FILES"] == "lixeira"
+        #else
+        return false
+        #endif
     }
 
     private func picked(_ outcome: Result<[URL], any Error>) {
