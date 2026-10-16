@@ -111,6 +111,8 @@ struct TainaField: View {
     var autocapitalization: TextInputAutocapitalization = .never
     var keyboard: UIKeyboardType = .default
     var contentType: UITextContentType?
+    var placeholder: String?
+    var help: String?
 
     @FocusState private var focused: Bool
 
@@ -139,17 +141,27 @@ struct TainaField: View {
                     .typeStyle(Theme.Text.caption)
                     .foregroundStyle(Theme.Palette.feedbackError)
             }
+            if errorMessages.isEmpty, let help {
+                Text(help)
+                    .typeStyle(Theme.Text.caption)
+                    .foregroundStyle(Theme.Palette.textMuted)
+            }
         }
     }
 
     private var field: some View {
         Group {
             if secure {
-                SecureField("", text: $text)
+                SecureField("", text: $text, prompt: prompt)
             } else {
-                TextField("", text: $text)
+                TextField("", text: $text, prompt: prompt)
             }
         }
+    }
+
+    /// The placeholder, as the prompt the field shows while it is empty.
+    private var prompt: Text? {
+        placeholder.map { Text($0) }
     }
 
     private var stroke: Color {

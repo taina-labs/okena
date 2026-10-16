@@ -53,7 +53,7 @@ struct InviteAcceptView: View {
         EmptyStateView(
             systemImage: "clock",
             title: "Este convite expirou ou já foi usado",
-            message: "Peça um novo link a quem te convidou.",
+            message: "Convites valem sete dias e só podem ser usados uma vez. Peça um novo link a quem cuida da sua comunidade.",
             action: EmptyStateAction(title: "Ir para o login") {
                 Task { await session.leavePendingAuth() }
             }
@@ -68,29 +68,34 @@ struct InviteAcceptView: View {
                 TainaField(
                     label: "Seu nome de usuário",
                     text: $username,
-                    errorMessages: Self.fieldErrors(["username"], in: failure),
-                    contentType: .username
+                    errorMessages: failure?.messages(for: ["username"]) ?? [],
+                    contentType: .username,
+                    placeholder: "ex.: joao",
+                    help: "Sem espaços. É com ele que você entra na comunidade."
                 )
                 TainaField(
                     label: "Nome de exibição (opcional)",
                     text: $displayName,
-                    errorMessages: Self.fieldErrors(["display_name"], in: failure),
+                    errorMessages: failure?.messages(for: ["display_name"]) ?? [],
                     autocapitalization: .sentences,
-                    contentType: .name
+                    contentType: .name,
+                    placeholder: "ex.: João Mendes"
                 )
                 TainaField(
                     label: "Senha",
                     text: $password,
                     secure: true,
-                    errorMessages: Self.fieldErrors(["password"], in: failure),
-                    contentType: .newPassword
+                    errorMessages: failure?.messages(for: ["password"]) ?? [],
+                    contentType: .newPassword,
+                    placeholder: "mínimo 8 caracteres"
                 )
                 TainaField(
                     label: "Confirme a senha",
                     text: $confirmation,
                     secure: true,
-                    errorMessages: mismatch.map { [$0] } ?? Self.fieldErrors(["password"], in: failure),
-                    contentType: .newPassword
+                    errorMessages: mismatch.map { [$0] } ?? (failure?.messages(for: ["password"]) ?? []),
+                    contentType: .newPassword,
+                    placeholder: "a mesma senha"
                 )
                 if let formMessage {
                     Text(formMessage)
@@ -185,17 +190,6 @@ struct InviteAcceptView: View {
     /// match. Pure, so both screens say it the same way.
     private static func confirmationMatches(password: String, confirmation: String) -> Bool {
         password == confirmation
-    }
-
-    /// The messages of the field, in the wire spellings of the envelope.
-    private static func fieldErrors(_ fields: [String], in failure: TainaError?) -> [String] {
-        guard case .api(let error) = failure else { return [] }
-        for field in fields {
-            if let messages = error.details[field], !messages.isEmpty {
-                return messages
-            }
-        }
-        return []
     }
 }
 

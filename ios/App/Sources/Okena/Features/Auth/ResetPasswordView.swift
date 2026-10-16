@@ -51,7 +51,7 @@ struct ResetPasswordView: View {
         EmptyStateView(
             systemImage: "clock",
             title: "Este link expirou ou já foi usado",
-            message: "Peça um novo a quem cuida da comunidade.",
+            message: "O link de redefinição vale uma hora e só pode ser usado uma vez. Peça um novo a quem cuida da sua comunidade.",
             action: EmptyStateAction(title: "Ir para o login") {
                 Task { await session.leavePendingAuth() }
             }
@@ -67,15 +67,17 @@ struct ResetPasswordView: View {
                     label: "Senha nova",
                     text: $password,
                     secure: true,
-                    errorMessages: Self.fieldErrors(["password"], in: failure),
-                    contentType: .newPassword
+                    errorMessages: failure?.messages(for: ["password"]) ?? [],
+                    contentType: .newPassword,
+                    placeholder: "mínimo 8 caracteres"
                 )
                 TainaField(
                     label: "Confirme a senha",
                     text: $confirmation,
                     secure: true,
-                    errorMessages: mismatch.map { [$0] } ?? Self.fieldErrors(["password"], in: failure),
-                    contentType: .newPassword
+                    errorMessages: mismatch.map { [$0] } ?? (failure?.messages(for: ["password"]) ?? []),
+                    contentType: .newPassword,
+                    placeholder: "a mesma senha"
                 )
                 if let formMessage {
                     Text(formMessage)
@@ -167,17 +169,6 @@ struct ResetPasswordView: View {
     /// match. Pure, so both screens say it the same way.
     private static func confirmationMatches(password: String, confirmation: String) -> Bool {
         password == confirmation
-    }
-
-    /// The messages of the field, in the wire spellings of the envelope.
-    private static func fieldErrors(_ fields: [String], in failure: TainaError?) -> [String] {
-        guard case .api(let error) = failure else { return [] }
-        for field in fields {
-            if let messages = error.details[field], !messages.isEmpty {
-                return messages
-            }
-        }
-        return []
     }
 }
 

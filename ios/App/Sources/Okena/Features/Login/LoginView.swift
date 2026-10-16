@@ -25,20 +25,22 @@ struct LoginView: View {
                 TainaField(
                     label: "Usuário",
                     text: $username,
-                    errorMessages: Self.fieldErrors(["username"], in: failure),
-                    contentType: .username
+                    errorMessages: failure?.messages(for: ["username"]) ?? [],
+                    contentType: .username,
+                    placeholder: "seu nome de usuário"
                 )
                 TainaField(
                     label: "Senha",
                     text: $password,
                     secure: true,
-                    errorMessages: Self.fieldErrors(["password"], in: failure),
-                    contentType: .password
+                    errorMessages: failure?.messages(for: ["password"]) ?? [],
+                    contentType: .password,
+                    placeholder: "sua senha"
                 )
                 TainaField(
                     label: "Nome deste aparelho",
                     text: $deviceName,
-                    errorMessages: Self.fieldErrors(["device_name", "deviceName"], in: failure),
+                    errorMessages: failure?.messages(for: ["device_name", "deviceName"]) ?? [],
                     autocapitalization: .sentences
                 )
                 if let formMessage {
@@ -104,17 +106,6 @@ struct LoginView: View {
             failure = error
         }
         signingIn = false
-    }
-
-    /// The messages of the field, in the wire spellings of the envelope.
-    private static func fieldErrors(_ fields: [String], in failure: TainaError?) -> [String] {
-        guard case .api(let error) = failure else { return [] }
-        for field in fields {
-            if let messages = error.details[field], !messages.isEmpty {
-                return messages
-            }
-        }
-        return []
     }
 
     /// The sentence above the button: the rate limit explains itself; the
