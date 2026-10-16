@@ -91,6 +91,42 @@ SIMCTL_CHILD_TAINA_PASSWORD=segredo \
   xcrun simctl launch --terminate-running-process booted io.taina.app
 ```
 
+### Instalar no seu iPhone
+
+Para usar o app num aparelho de verdade, o caminho mais curto é rodar do Xcode
+com o seu Apple ID:
+
+1. `cd ios/App && xcodegen generate`, depois abra `Okena.xcodeproj`.
+2. Xcode > Settings > Accounts: adicione o seu Apple ID (uma conta gratuita
+   serve).
+3. Selecione o target **Okena** > *Signing & Capabilities* > marque
+   *Automatically manage signing* e escolha o seu *Team*.
+4. Se a assinatura reclamar do bundle id, troque `io.taina.app` por algo único
+   (ex.: `io.taina.app.voce`). Nada no código depende dele além do serviço do
+   Keychain, que fica como está.
+5. No iPhone: Ajustes > Privacidade e Segurança > **Modo de Desenvolvedor** >
+   ligue (o aparelho reinicia). Conecte por cabo e confie no computador.
+6. Escolha o iPhone como destino no Xcode e rode (⌘R).
+7. No iPhone: Ajustes > Geral > VPN e Gerenciamento de Dispositivo > confie no
+   certificado.
+8. Na tela de Setup do app, informe o endereço da caixa (um nome de tailnet, ou
+   um IP na mesma rede). O app aceita `http` de propósito, e diz isso em voz
+   alta.
+
+Uma conta gratuita expira o app em 7 dias (rode de novo do Xcode). Uma conta
+paga ($99/ano) vale um ano e libera o TestFlight, que é o caminho melhor para
+mandar o app para outras pessoas.
+
+O esquema de URL `taina` já está registrado (`project.yml`): os links de convite
+e de redefinição de senha abrem o app, não o navegador. Para testar o deep link
+sem tocar numa tela (simulador, script), o build de DEBUG lê `TAINA_DEEPLINK` no
+boot, no mesmo molde do `TAINA_HOST`:
+
+```bash
+SIMCTL_CHILD_TAINA_DEEPLINK="taina://convite/TOKEN?host=http%3A%2F%2Ftaina.yby" \
+  xcrun simctl launch --terminate-running-process booted io.taina.app
+```
+
 ## Conferir contra uma caixa de verdade
 
 O core traz um smoke executável que percorre a fatia mínima da API pela mesma
@@ -109,11 +145,17 @@ impresso.
 
 ### O que já existe
 
-O núcleo (`OkenaCore`) cobre a fatia mínima da RFC_005: instância, sessão por
-token de dispositivo, quem está agindo, pastas, conteúdo, upload, download e
-miniatura. O app tem as telas de Setup, Login, Arquivos e Conta. O resto da
-superfície (fotos, pessoas, mural, pedidos, armazenamento) entra no mesmo
-protocolo `TainaAPI`, um método por endpoint.
+O `OkenaCore` cobre a API v1 inteira: instância e sessão por token de
+dispositivo, quem está agindo, dispositivos, pessoas, pastas e arquivos (subir,
+baixar, miniatura, renomear, mover, trocar de zona, apagar), lixeira, fotos,
+mural, pedidos de acesso, armazenamento e saúde, mais o aceite de convite e a
+redefinição de senha por deep link. Um método no protocolo `TainaAPI` por
+endpoint.
+
+O app tem as telas de Setup, Login, Início, Arquivos (com a lixeira), Fotos,
+Mural, Moradores, Armazenamento, Saúde, Pedidos, Conta, e as de aceite de
+convite e de redefinição de senha. Um modelo por tela, decisões em funções
+puras.
 
 As três fontes da marca vêm empacotadas em `Resources/Fonts`: os TTF variáveis
 das mesmas famílias que a web auto-hospeda, com a licença OFL de cada uma. O
