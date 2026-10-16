@@ -112,6 +112,122 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v1/invites/{token}:
+    get:
+      tags: [Instância e sessão]
+      summary: Estado do convite
+      description: |
+        A leitura leve que o app faz ao abrir o deep link
+        (`taina://convite/:token`): o convite ainda vale? A validação de
+        verdade continua no POST.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      responses:
+        "200":
+          description: O convite vale.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/invites/{token}/accept:
+    post:
+      tags: [Instância e sessão]
+      summary: Aceitar convite
+      description: |
+        Cria a conta e a sessão na mesma requisição. Sem
+        `password_confirmation` de propósito: quem confere as duas senhas é
+        o app; a divergência viajando no fio trataria um erro de digitação
+        como token inválido (o 401 errado).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                display_name:
+                  type: string
+                  description: Como o nome aparece para a comunidade. Sem ele, o convite segue pendente de nome.
+                device_name:
+                  type: string
+                  description: Rótulo do aparelho (ex. "iPhone da Ana"). Sem ele, "Dispositivo".
+      responses:
+        "201":
+          description: Conta criada; a sessão nasce aqui.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /api/v1/password-resets/{token}:
+    get:
+      tags: [Instância e sessão]
+      summary: Estado do link de senha
+      description: |
+        A leitura leve que o app faz ao abrir o deep link
+        (`taina://redefinir/:token`); a validação de verdade fica no POST.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      responses:
+        "200":
+          description: O link vale.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Instância e sessão]
+      summary: Redefinir senha
+      description: |
+        Define a senha nova e cria a sessão na mesma requisição. Sem
+        `password_confirmation` de propósito, igual ao aceite do convite.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                device_name:
+                  type: string
+                  description: Rótulo do aparelho (ex. "iPhone da Ana"). Sem ele, "Dispositivo".
+      responses:
+        "201":
+          description: Senha redefinida; a sessão nasce aqui.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
   /api/v1/me:
     get:
       tags: [Instância e sessão]
@@ -1086,6 +1202,13 @@ components:
       description: O id público do pedido de acesso.
       schema:
         type: string
+    Token:
+      name: token
+      in: path
+      required: true
+      description: O token cru do convite ou do link de senha, que o deep link carrega.
+      schema:
+        type: string
 
   responses:
     Unauthorized:
@@ -1224,6 +1347,8 @@ components:
           description: O id público de pessoa, 12 caracteres URL-safe.
         username:
           type: string
+          nullable: true
+          description: O nome de usuario; nulo num convite ainda nao aceito.
         display_name:
           type: string
           nullable: true
@@ -1558,6 +1683,14 @@ components:
           $ref: "#/components/schemas/Rkey"
         name:
           type: string
+
+    TokenStatus:
+      type: object
+      description: A resposta da leitura leve de um token, o que a tela do deep link abre com.
+      required: [valid]
+      properties:
+        valid:
+          type: boolean
 
     MemberInvite:
       type: object
