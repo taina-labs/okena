@@ -44,6 +44,61 @@ public struct LiveTainaAPI: TainaAPI {
             }
     }
 
+    public func inviteStatus(token: String) async -> TainaResult<TokenStatus> {
+        await prepared(path: "invites/\(token)", authenticated: false).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, TokenStatus.self, label: "invite status")
+            }
+        }
+    }
+
+    /// One password on the wire, on purpose: the two password fields are
+    /// the app's own check, so a typo cannot arrive looking like a dead
+    /// token (the 401 the box would answer otherwise).
+    public func acceptInvite(token: String, username: String, password: String, displayName: String?, deviceName: String) async -> TainaResult<Session> {
+        struct Accept: Encodable {
+            let username: String
+            let password: String
+            let displayName: String?
+            let deviceName: String
+        }
+
+        guard let body = try? APICoding.encoder.encode(Accept(username: username, password: password, displayName: displayName, deviceName: deviceName)) else {
+            return .failure(.invalidResponse("invite accept body"))
+        }
+        return await prepared(path: "invites/\(token)/accept", method: "POST", body: body, contentType: "application/json", authenticated: false)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respond(http, Session.self, label: "accepted invite")
+                }
+            }
+    }
+
+    public func resetStatus(token: String) async -> TainaResult<TokenStatus> {
+        await prepared(path: "password-resets/\(token)", authenticated: false).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, TokenStatus.self, label: "reset status")
+            }
+        }
+    }
+
+    public func resetPassword(token: String, password: String, deviceName: String) async -> TainaResult<Session> {
+        struct Reset: Encodable {
+            let password: String
+            let deviceName: String
+        }
+
+        guard let body = try? APICoding.encoder.encode(Reset(password: password, deviceName: deviceName)) else {
+            return .failure(.invalidResponse("password reset body"))
+        }
+        return await prepared(path: "password-resets/\(token)", method: "POST", body: body, contentType: "application/json", authenticated: false)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respond(http, Session.self, label: "password reset")
+                }
+            }
+    }
+
     public func revokeSession() async -> TainaResult<Void> {
         await prepared(path: "session", method: "DELETE", authenticated: true).then { request in
             await self.transport.send(request).then { http in

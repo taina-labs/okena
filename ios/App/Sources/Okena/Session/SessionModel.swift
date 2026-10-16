@@ -13,6 +13,19 @@ final class SessionModel {
         case needsInstance   // no host yet
         case needsLogin      // host, no session
         case ready(Me)       // signed in
+        case pendingAuth(PendingAuth)  // deep link open, deciding
+    }
+
+    /// A deep link mid-flight: the token of an invite or a reset, with the
+    /// screens of Features/Auth on top.
+    struct PendingAuth: Equatable {
+        enum Kind: Equatable {
+            case invite
+            case reset
+        }
+
+        let kind: Kind
+        let token: String
     }
 
     private(set) var state: State = .checking
@@ -58,7 +71,9 @@ final class SessionModel {
 
     /// Restores the saved session, if any, and decides the first screen. A
     /// session that cannot be read counts as absent: the person signs in
-    /// again.
+    /// again. On a cold start the deep link can arrive while the restore is
+    /// still reading storage, and the link wins: it already decided the
+    /// screen, so the restore writes only while nothing else has.
     func restore() async {
 #if DEBUG
         if await autoConfigure() { return }
@@ -66,9 +81,16 @@ final class SessionModel {
         host = await hostStore.address()
         switch await store.restore() {
         case .success(.some(let session)):
-            state = .ready(session.identity)
+            decide(.ready(session.identity))
         case .success(nil), .failure:
-            state = host == nil ? .needsInstance : .needsLogin
+            decide(host == nil ? .needsInstance : .needsLogin)
+        }
+    }
+
+    /// Writes the state only when the screen is still undecided.
+    private func decide(_ target: State) {
+        if case .checking = state {
+            state = target
         }
     }
 
@@ -107,7 +129,27 @@ final class SessionModel {
     /// the stored session is picked up at the next launch.
     func login(username: String, password: String, deviceName: String) async -> TainaResult<Me> {
         notice = nil
-        let created = await api.createSession(username: username, password: password, deviceName: deviceName)
+        return await settle(await api.createSession(username: username, password: password, deviceName: deviceName))
+    }
+
+    /// Accepts the invite with what the person typed. On success the
+    /// session lands in the store exactly like a login, and the shell
+    /// takes over.
+    func acceptInvite(token: String, username: String, password: String, displayName: String?, deviceName: String) async -> TainaResult<Me> {
+        await settle(await api.acceptInvite(token: token, username: username, password: password, displayName: displayName, deviceName: deviceName))
+    }
+
+    /// Defines the new password of the reset link and signs the person in,
+    /// the same way a login lands.
+    func resetPassword(token: String, password: String, deviceName: String) async -> TainaResult<Me> {
+        await settle(await api.resetPassword(token: token, password: password, deviceName: deviceName))
+    }
+
+    /// The tail every sign in shares, whatever produced the session: store
+    /// it, confirm with the box, and become ready. A failure of the
+    /// confirmation stays on the screen; the stored session is picked up at
+    /// the next launch.
+    private func settle(_ created: TainaResult<Session>) async -> TainaResult<Me> {
         let session: Session
         switch created {
         case .success(let value):
@@ -129,6 +171,57 @@ final class SessionModel {
         case .failure(let error):
             return .failure(error)
         }
+    }
+
+    /// The light read the deep link screens open with: does the token still
+    /// count? The real validation stays on the submit.
+    func checkToken(_ pending: PendingAuth) async -> TainaResult<Bool> {
+        switch pending.kind {
+        case .invite:
+            return await api.inviteStatus(token: pending.token).map(\.valid)
+        case .reset:
+            return await api.resetStatus(token: pending.token).map(\.valid)
+        }
+    }
+
+    /// The box's deep link, opened natively: `taina://convite/<token>` or
+    /// `taina://redefinir/<token>`, with the box address in the `host`
+    /// query param. The link speaks for its own community, so its address
+    /// replaces the saved one; without it, the saved box is the one. The
+    /// probe is for the community name only: a box that stays silent does
+    /// not block the token, whose check happens on the screen. A malformed
+    /// link changes nothing.
+    func handleDeepLink(_ url: URL) async {
+        guard let link = DeepLink.parse(url) else { return }
+        let box: InstanceAddress
+        if let typed = link.box {
+            guard case .success(let parsed) = InstanceAddress.parse(input: typed) else { return }
+            box = parsed
+        } else if let saved = await hostStore.address() {
+            box = saved
+        } else {
+            return
+        }
+
+        host = box
+        _ = await hostStore.save(box)
+        instance = nil
+        if case .success(let found) = await api.instance(), found.bootstrapped {
+            instance = found
+        }
+        state = .pendingAuth(PendingAuth(kind: link.kind == .invite ? .invite : .reset, token: link.token))
+    }
+
+    /// Leaves the deep link screen for the normal flow: a session the
+    /// person already held is still theirs, so it is the way back; without
+    /// one, the saved box leads to the login, and with no box, the setup.
+    func leavePendingAuth() async {
+        if let current = await store.current() {
+            state = .ready(current.identity)
+            return
+        }
+        host = await hostStore.address()
+        state = host == nil ? .needsInstance : .needsLogin
     }
 
     /// Revokes on the box, then leaves locally whatever the answer: leaving
@@ -280,6 +373,30 @@ extension SessionModel {
     /// thing.
     static func previewSignedIn() async -> SessionModel {
         await signedIn(FakeTainaAPI())
+    }
+
+    /// A deep link mid-flight over the fake: the model in pendingAuth and
+    /// the community probed, so the screen renders its form. `expired`
+    /// hands the fake's dead token, and the same seam previews the dead
+    /// end.
+    static func previewPendingInvite(expired: Bool = false) async -> (model: SessionModel, pending: PendingAuth) {
+        await pendingAuth(.invite, expired: expired)
+    }
+
+    /// The same seam, for the reset link.
+    static func previewPendingReset(expired: Bool = false) async -> (model: SessionModel, pending: PendingAuth) {
+        await pendingAuth(.reset, expired: expired)
+    }
+
+    private static func pendingAuth(_ kind: PendingAuth.Kind, expired: Bool) async -> (model: SessionModel, pending: PendingAuth) {
+        let api = FakeTainaAPI()
+        let model = previewModel(state: .needsLogin, host: previewAddress, api: api)
+        if case .success(let found) = await api.instance() {
+            model.instance = found
+        }
+        let pending = PendingAuth(kind: kind, token: expired ? "expirado" : "tk9x2m5qp7w4v8")
+        model.state = .pendingAuth(pending)
+        return (model, pending)
     }
 
     /// The empty-folder preview: a folder the fake just created, still with

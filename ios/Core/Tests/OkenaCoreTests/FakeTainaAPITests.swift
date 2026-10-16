@@ -318,3 +318,63 @@ private let estatutoRkey = "3m2a8twqpv5z2"
     #expect(saude.jobs["backups"] == 0)
     #expect(saude.storage.files == 5)
 }
+
+@Test func theInviteFlowRunsFromProbeToAccount() async throws {
+    let fake = FakeTainaAPI()
+
+    let status = try #require(await fake.inviteStatus(token: "tk9x2m5qp7w4v8").value)
+    #expect(status.valid)
+
+    let session = try #require(await fake.acceptInvite(token: "tk9x2m5qp7w4v8", username: "joao", password: "segredo", displayName: "João Mendes", deviceName: "iPhone do João").value)
+    #expect(session.token.hasPrefix("tnd_"))
+    #expect(session.me.username == "joao")
+    #expect(session.me.displayName == "João Mendes")
+    #expect(session.me.papel == .morador)
+
+    let me = try #require(await fake.me().value)
+    #expect(me.ava.username == "joao")
+
+    let devices = try #require(await fake.devices().value)
+    #expect(devices.first?.name == "iPhone do João")
+}
+
+@Test func anEmptyUsernameOnTheInviteAnswersValidationFailed() async {
+    guard case .api(let apiError) = await FakeTainaAPI().acceptInvite(token: "tk9x2m5qp7w4v8", username: "", password: "segredo", displayName: nil, deviceName: "Teste").error else {
+        #expect(Bool(false), "expected .api")
+        return
+    }
+    #expect(apiError.isValidationFailed)
+    #expect(apiError.details["username"]?.isEmpty == false)
+}
+
+@Test func theResetFlowSignsTheMoradoraIn() async throws {
+    let fake = FakeTainaAPI()
+
+    let status = try #require(await fake.resetStatus(token: "tk9x2m5qp7w4v8").value)
+    #expect(status.valid)
+
+    let session = try #require(await fake.resetPassword(token: "tk9x2m5qp7w4v8", password: "nova-senha", deviceName: "iPhone da Joana").value)
+    #expect(session.me.username == "joana")
+
+    let me = try #require(await fake.me().value)
+    #expect(me.ava.username == "joana")
+}
+
+/// The fake's dead token closes every door with the 401 the box answers,
+/// so the dead ends of both screens preview.
+@Test func theExpiredTokenClosesEveryDoor() async {
+    let fake = FakeTainaAPI()
+    for result in [
+        await fake.inviteStatus(token: "expirado").error,
+        await fake.resetStatus(token: "expirado").error,
+        await fake.acceptInvite(token: "expirado", username: "joao", password: "segredo", displayName: nil, deviceName: "Teste").error,
+        await fake.resetPassword(token: "expirado", password: "segredo", deviceName: "Teste").error,
+    ] {
+        guard case .api(let apiError) = result else {
+            #expect(Bool(false), "expected .api")
+            continue
+        }
+        #expect(apiError.isUnauthorized)
+        #expect(apiError.code == "invalid_token")
+    }
+}

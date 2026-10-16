@@ -8,6 +8,10 @@ private struct StubAPI: TainaAPI {
 
     func instance() async -> TainaResult<Instance> { .failure(.cancelled) }
     func createSession(username: String, password: String, deviceName: String) async -> TainaResult<Session> { .failure(.cancelled) }
+    func inviteStatus(token: String) async -> TainaResult<TokenStatus> { .failure(.cancelled) }
+    func acceptInvite(token: String, username: String, password: String, displayName: String?, deviceName: String) async -> TainaResult<Session> { .failure(.cancelled) }
+    func resetStatus(token: String) async -> TainaResult<TokenStatus> { .failure(.cancelled) }
+    func resetPassword(token: String, password: String, deviceName: String) async -> TainaResult<Session> { .failure(.cancelled) }
     func revokeSession() async -> TainaResult<Void> { .failure(.cancelled) }
     func me() async -> TainaResult<Me> { .failure(.cancelled) }
     func devices() async -> TainaResult<[DeviceToken]> { .failure(.cancelled) }

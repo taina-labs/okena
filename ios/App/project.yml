@@ -37,6 +37,15 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
+        # The box builds the deep links of the invite and the password reset
+        # (taina://convite/:token and taina://redefinir/:token, with the box
+        # address in the `host` query param). The scheme is registered here
+        # so the link opens the app, which resolves it natively, without a
+        # browser (SessionModel.handleDeepLink).
+        CFBundleURLTypes:
+          - CFBundleURLName: io.taina.app
+            CFBundleURLSchemes:
+              - taina
         # The app follows the system appearance. tokens.css is one palette:
         # the night default, with the light block derived from it under the
         # same token names, and each semantic color carries both values.

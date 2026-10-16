@@ -294,27 +294,75 @@ public actor FakeTainaAPI: TainaAPI {
             )))
         }
 
-        let now = clock()
         let ava = Ava(
             publicId: "avap2xw5m8q3",
             username: username,
             displayName: nil,
             papel: .morador,
-            activatedAt: now,
+            activatedAt: clock(),
             deactivatedAt: nil,
-            createdAt: now
+            createdAt: clock()
         )
-        let device = DeviceToken(
-            publicId: "devp2xw5m8q3",
-            name: deviceName.isEmpty ? "Dispositivo" : deviceName,
-            lastUsedAt: now,
-            revokedAt: nil,
-            createdAt: now
+        return .success(handOut(ava, deviceName: deviceName))
+    }
+
+    /// The light read the invite screen opens with. Everything counts
+    /// except the literal `expirado`, which answers 401 `invalid_token`,
+    /// so the dead end previews; a real token is single use and the box
+    /// still re-checks it on the submit.
+    public func inviteStatus(token: String) async -> TainaResult<TokenStatus> {
+        await pause()
+        guard counts(token) else {
+            return .failure(.api(Self.invalidToken))
+        }
+        return .success(TokenStatus(valid: true))
+    }
+
+    /// Accepts like the box: the token first (401 for a dead link), the
+    /// username required (422 for an empty one), and the account is born
+    /// with the session in the same hand the login gets.
+    public func acceptInvite(token: String, username: String, password: String, displayName: String?, deviceName: String) async -> TainaResult<Session> {
+        await pause()
+        guard counts(token) else {
+            return .failure(.api(Self.invalidToken))
+        }
+        guard !username.isEmpty else {
+            return .failure(.api(APIError(
+                code: "validation_failed",
+                status: 422,
+                message: "Informe seu nome de usuário.",
+                details: ["username": ["não pode ficar em branco"]]
+            )))
+        }
+        let ava = Ava(
+            publicId: "avap2xw5m8q3",
+            username: username,
+            displayName: displayName,
+            papel: .morador,
+            activatedAt: clock(),
+            deactivatedAt: nil,
+            createdAt: clock()
         )
-        let created = Session(token: "tnd_" + Self.randomHex(32), device: device, me: ava, tekoa: tekoa)
-        devices.insert(device, at: 0)
-        session = created
-        return .success(created)
+        return .success(handOut(ava, deviceName: deviceName))
+    }
+
+    /// The same light read, for the reset link.
+    public func resetStatus(token: String) async -> TainaResult<TokenStatus> {
+        await pause()
+        guard counts(token) else {
+            return .failure(.api(Self.invalidToken))
+        }
+        return .success(TokenStatus(valid: true))
+    }
+
+    /// The reset signs the moradora the link belongs to in; the fake keeps
+    /// no passwords, so any live token opens her session.
+    public func resetPassword(token: String, password: String, deviceName: String) async -> TainaResult<Session> {
+        await pause()
+        guard counts(token) else {
+            return .failure(.api(Self.invalidToken))
+        }
+        return .success(handOut(neighbor, deviceName: deviceName))
     }
 
     public func revokeSession() async -> TainaResult<Void> {
@@ -779,6 +827,36 @@ public actor FakeTainaAPI: TainaAPI {
         message: "Entre na sua conta para continuar.",
         details: [:]
     )
+
+    private static let invalidToken = APIError(
+        code: "invalid_token",
+        status: 401,
+        message: "Este link não vale mais. Peça um novo a quem cuida da comunidade.",
+        details: [:]
+    )
+
+    /// The fake's token rule: only the literal `expirado` is a dead link
+    /// and nothing counts without a token.
+    private func counts(_ token: String) -> Bool {
+        !token.isEmpty && token != "expirado"
+    }
+
+    /// The session the fake hands out, the way login, invite and reset all
+    /// create one: a fresh device, a raw token shown once, stored here.
+    private func handOut(_ ava: Ava, deviceName: String) -> Session {
+        let now = clock()
+        let device = DeviceToken(
+            publicId: "devp2xw5m8q3",
+            name: deviceName.isEmpty ? "Dispositivo" : deviceName,
+            lastUsedAt: now,
+            revokedAt: nil,
+            createdAt: now
+        )
+        let created = Session(token: "tnd_" + Self.randomHex(32), device: device, me: ava, tekoa: tekoa)
+        devices.insert(device, at: 0)
+        session = created
+        return created
+    }
 
     private static let notFoundFolder = APIError(
         code: "not_found",

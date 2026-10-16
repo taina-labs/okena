@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The switch on the session: the three states before the app, and the
-/// authenticated shell after it.
+/// The switch on the session: the three states before the app, the deep
+/// link screens while a token decides, and the authenticated shell after
+/// it.
 struct RootView: View {
     @Environment(SessionModel.self) private var session
 
@@ -14,6 +15,13 @@ struct RootView: View {
             SetupView()
         case .needsLogin:
             LoginView()
+        case .pendingAuth(let pending):
+            switch pending.kind {
+            case .invite:
+                InviteAcceptView(pending: pending)
+            case .reset:
+                ResetPasswordView(pending: pending)
+            }
         case .ready:
             ShellView()
                 .background(Theme.Palette.bgApp)

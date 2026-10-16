@@ -769,3 +769,93 @@ private func signedInAPI(
     #expect(decoded.items.last?.username == nil)
     #expect(decoded.items.last?.label == "Convite pendente")
 }
+
+private let tokenStatusJSON = """
+{"valid":true}
+"""
+
+private let inviteToken = "tk9x2m5qp7w4v8"
+
+/// The invite and reset doors are public: the token IS the credential, so
+/// even a signed in app must not hang the Bearer on these calls.
+@Test func inviteStatusProbesThePathWithoutTheBearer() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/invites/\(inviteToken)"), 200, body: tokenStatusJSON))
+    })
+
+    let status = try #require(await api.inviteStatus(token: inviteToken).value)
+    #expect(status.valid)
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "GET")
+    #expect(request.url?.absoluteString == "https://box/api/v1/invites/\(inviteToken)")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+}
+
+@Test func acceptInvitePostsTheJSONAndNoBearer() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/invites/\(inviteToken)/accept"), 201, body: sessionJSON))
+    })
+
+    let session = try #require(await api.acceptInvite(token: inviteToken, username: "joao", password: "segredo", displayName: "João Mendes", deviceName: "iPhone do João").value)
+    #expect(session.token == "tnd_abcdef0123456789abcdef0123456789")
+    #expect(session.me.username == "ana")
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "POST")
+    #expect(request.url?.absoluteString == "https://box/api/v1/invites/\(inviteToken)/accept")
+    #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+    let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+    #expect(body.contains("\"username\":\"joao\""))
+    #expect(body.contains("\"password\":\"segredo\""))
+    #expect(body.contains("\"display_name\":\"João Mendes\""))
+    #expect(body.contains("\"device_name\":\"iPhone do João\""))
+    // The confirmation is the app's own check and never travels.
+    #expect(!body.contains("confirmation"))
+}
+
+@Test func acceptInviteOmitsTheDisplayNameWhenThereIsNone() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/invites/\(inviteToken)/accept"), 201, body: sessionJSON))
+    })
+
+    _ = await api.acceptInvite(token: inviteToken, username: "joao", password: "segredo", displayName: nil, deviceName: "iPhone do João")
+
+    let body = String(decoding: try #require(await stub.recorder.requests().first).httpBody ?? Data(), as: UTF8.self)
+    #expect(body.contains("\"username\":\"joao\""))
+    #expect(!body.contains("display_name"))
+}
+
+@Test func resetStatusProbesThePathWithoutTheBearer() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/password-resets/\(inviteToken)"), 200, body: tokenStatusJSON))
+    })
+
+    let status = try #require(await api.resetStatus(token: inviteToken).value)
+    #expect(status.valid)
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "GET")
+    #expect(request.url?.absoluteString == "https://box/api/v1/password-resets/\(inviteToken)")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+}
+
+@Test func resetPasswordPostsTheJSONAndNoBearer() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/password-resets/\(inviteToken)"), 201, body: sessionJSON))
+    })
+
+    let session = try #require(await api.resetPassword(token: inviteToken, password: "segredo", deviceName: "iPhone da Joana").value)
+    #expect(session.me.username == "ana")
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "POST")
+    #expect(request.url?.absoluteString == "https://box/api/v1/password-resets/\(inviteToken)")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+    let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+    #expect(body.contains("\"password\":\"segredo\""))
+    #expect(body.contains("\"device_name\":\"iPhone da Joana\""))
+    #expect(!body.contains("username"))
+    #expect(!body.contains("confirmation"))
+}

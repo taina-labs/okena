@@ -12,6 +12,10 @@ public protocol TainaAPI: Sendable {
     func instance() async -> TainaResult<Instance>
 
     func createSession(username: String, password: String, deviceName: String) async -> TainaResult<Session>
+    func inviteStatus(token: String) async -> TainaResult<TokenStatus>
+    func acceptInvite(token: String, username: String, password: String, displayName: String?, deviceName: String) async -> TainaResult<Session>
+    func resetStatus(token: String) async -> TainaResult<TokenStatus>
+    func resetPassword(token: String, password: String, deviceName: String) async -> TainaResult<Session>
     func revokeSession() async -> TainaResult<Void>
     func me() async -> TainaResult<Me>
     func devices() async -> TainaResult<[DeviceToken]>

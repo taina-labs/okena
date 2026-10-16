@@ -12,6 +12,9 @@ struct OkenaApp: App {
                 .task {
                     await session.restore()
                 }
+                .onOpenURL { url in
+                    Task { await session.handleDeepLink(url) }
+                }
         }
     }
 }
