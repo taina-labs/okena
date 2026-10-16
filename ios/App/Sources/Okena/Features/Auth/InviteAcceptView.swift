@@ -41,6 +41,7 @@ struct InviteAcceptView: View {
                 form
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Palette.bgApp)
         .navigationTitle("Aceitar convite")
         .task { await check() }

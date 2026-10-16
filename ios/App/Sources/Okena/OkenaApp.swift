@@ -11,6 +11,9 @@ struct OkenaApp: App {
                 .tint(Theme.Palette.brandPrimary)
                 .task {
                     await session.restore()
+                    #if DEBUG
+                    await session.applyLaunchDeepLink()
+                    #endif
                 }
                 .onOpenURL { url in
                     Task { await session.handleDeepLink(url) }

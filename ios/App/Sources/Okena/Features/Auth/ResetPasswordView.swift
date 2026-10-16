@@ -39,6 +39,7 @@ struct ResetPasswordView: View {
                 form
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Palette.bgApp)
         .navigationTitle("Redefinir senha")
         .task { await check() }

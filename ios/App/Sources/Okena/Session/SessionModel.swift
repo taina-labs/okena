@@ -94,6 +94,18 @@ final class SessionModel {
         }
     }
 
+#if DEBUG
+    /// The script/preview seam for the deep link: `TAINA_DEEPLINK` feeds a URL
+    /// on launch, the same way `TAINA_HOST` drives the setup flow, so a
+    /// screenshot or a UI test opens an invite without the system's
+    /// "Open in Taina?" prompt. The running app arrives through `onOpenURL`.
+    func applyLaunchDeepLink() async {
+        guard let raw = ProcessInfo.processInfo.environment["TAINA_DEEPLINK"],
+              let url = URL(string: raw) else { return }
+        await handleDeepLink(url)
+    }
+#endif
+
     /// Validates what was typed, asks the box, and keeps the address when
     /// the community answers. A box that answers but has no community yet
     /// is its own outcome: the address is not saved, and Setup explains it.
