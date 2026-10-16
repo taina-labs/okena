@@ -73,3 +73,18 @@ extension TainaError: LocalizedError {
         }
     }
 }
+
+extension TainaError {
+    /// The envelope's messages for the first of `fields` that has any, in
+    /// the wire spellings, so a form shows them under the right input. A
+    /// local error (no envelope) carries none.
+    public func messages(for fields: [String]) -> [String] {
+        guard case .api(let error) = self else { return [] }
+        for field in fields {
+            if let messages = error.details[field], !messages.isEmpty {
+                return messages
+            }
+        }
+        return []
+    }
+}
