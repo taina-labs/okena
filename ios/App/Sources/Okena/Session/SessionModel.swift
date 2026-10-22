@@ -199,22 +199,10 @@ final class SessionModel {
     }
 
     /// The self-service password change, while signed in: the box keeps
-    /// this aparelho's token and revokes the others. The API client's
-    /// seam is throws-shaped where the app returns values, so the
-    /// conversion happens once, here, at the boundary.
+    /// this aparelho's token and revokes the others. The client returns the
+    /// app's value, so there is nothing to convert here.
     func updatePassword(current: String, new: String) async -> TainaResult<Void> {
-        do {
-            try await api.updatePassword(current: current, new: new)
-            return .success(())
-        } catch {
-            return .failure(Self.unwrapped(error))
-        }
-    }
-
-    /// A thrown failure back into the value the app reads: the client
-    /// throws the errors it already has.
-    private static func unwrapped(_ thrown: Error) -> TainaError {
-        thrown as? TainaError ?? .invalidResponse("password change")
+        await api.updatePassword(current: current, new: new)
     }
 
     /// The tail every sign in shares, whatever produced the session: store
