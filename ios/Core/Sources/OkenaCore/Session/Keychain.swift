@@ -1,8 +1,9 @@
 import Foundation
 import Security
 
-/// Thin Keychain wrapper for raw Data. Items stay readable after the first
-/// unlock so a call made right after the phone boots still works.
+/// Thin Keychain wrapper for raw Data. Items are readable only while the
+/// phone is unlocked, and never leave this device: the token must not
+/// travel in an iCloud backup to a new phone.
 public struct Keychain: Sendable {
     private let service: String
 
@@ -11,7 +12,9 @@ public struct Keychain: Sendable {
     }
 
     /// Replaces any existing item: the delete happens first, so a second
-    /// save never fails with `errSecDuplicateItem`.
+    /// save never fails with `errSecDuplicateItem`. The delete also makes
+    /// the accessibility class follow the current constant, so an item
+    /// saved by an older build migrates on the next sign in.
     public func set(_ data: Data, account: String) -> TainaResult<Void> {
         remove(account: account)
 
@@ -20,7 +23,7 @@ public struct Keychain: Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
 
         let status = SecItemAdd(query as CFDictionary, nil)

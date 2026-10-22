@@ -1,8 +1,9 @@
 import OkenaCore
 import SwiftUI
 
-/// The first screen: the address of the community's box. One field, one
-/// button, and an honest answer for every outcome.
+/// The first screen: the address of the community's box, and the invite
+/// link for the person who arrived with one. One address field, one
+/// button, one paste field, and an honest answer for every outcome.
 struct SetupView: View {
     @Environment(SessionModel.self) private var session
 
@@ -51,8 +52,13 @@ struct SetupView: View {
                     }
                 }
                 if let failure {
-                    ErrorView(error: failure, retry: { await connect() })
+                    if Self.unreachable(failure) {
+                        unreachableCard
+                    } else {
+                        ErrorView(error: failure, retry: { await connect() })
+                    }
                 }
+                InvitePasteField()
             }
             .padding(Theme.Space.space5)
         }
@@ -66,6 +72,34 @@ struct SetupView: View {
             return false
         }
         return address.isCleartext
+    }
+
+    /// Nothing answered at this address, on either scheme: the one
+    /// failure where the person can act, so it names what to check
+    /// instead of the generic "verifique a conexão".
+    private static func unreachable(_ error: TainaError) -> Bool {
+        if case .network = error { return true }
+        return false
+    }
+
+    private static let unreachableMessage =
+        "Nada respondeu neste endereço. Confira se ele está certo, se a caixa está ligada e se este aparelho está na rede da comunidade."
+
+    private var unreachableCard: some View {
+        VStack(spacing: Theme.Space.space4) {
+            Image(systemName: "exclamationmark.triangle")
+                .typeStyle(Theme.Text.h2)
+                .foregroundStyle(Theme.Palette.feedbackWarning)
+            Text(Self.unreachableMessage)
+                .typeStyle(Theme.Text.body)
+                .foregroundStyle(Theme.Palette.textSecondary)
+                .multilineTextAlignment(.center)
+            SecondaryButton(title: "Tentar de novo") {
+                Task { await connect() }
+            }
+        }
+        .padding(Theme.Space.space5)
+        .frame(maxWidth: .infinity)
     }
 
     private func connect() async {
