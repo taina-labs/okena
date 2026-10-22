@@ -53,16 +53,22 @@ targets:
           - CFBundleURLName: io.taina.app
             CFBundleURLSchemes:
               - taina
-        # The app follows the system appearance. tokens.css is one palette:
-        # the night default, with the light block derived from it under the
-        # same token names, and each semantic color carries both values.
-        UIUserInterfaceStyle: Automatic
+        # One theme: the night one (DESIGN.md: dark-first, a single theme;
+        # a light one is a future decision, not a shipped one). The semantic
+        # tokens in Theme.swift carry the night values of tokens.css only.
+        UIUserInterfaceStyle: Dark
         # The box address is typed by the person on the first screen, so the
-        # app cannot know at build time whether it answers over TLS. A scoped
-        # exception cannot cover a host that is not known until runtime, and
-        # a name such as taina.yby is not "local" to ATS either. Cleartext is
-        # allowed and stated out loud instead (InstanceAddress.isCleartext).
-        # App Store review wants this reason in the review notes.
+        # app cannot know at build time whether it answers over TLS. The
+        # exception is as scoped as iOS allows, which is not far: it cannot
+        # be per-domain (NSExceptionDomains is static, and no one can
+        # enumerate hosts typed at runtime), and NSAllowsLocalNetworking
+        # covers only .local names and private-range IP literals, while the
+        # pilot box lives behind a tailnet name such as taina.yby, a fully
+        # qualified host ATS classifies as neither (InstanceAddress.swift
+        # records the local-only rule that was tried and refused real
+        # boxes). Cleartext is allowed and stated out loud instead
+        # (InstanceAddress.isCleartext). App Store review wants this reason
+        # in the review notes.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         UIAppFonts:

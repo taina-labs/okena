@@ -1,6 +1,7 @@
 import Foundation
 import OkenaCore
 import SwiftUI
+import UIKit
 
 /// The app's session: which box, which person, and the API bound to both.
 /// The imperative shell only assigns and calls; every decision is in Core
@@ -45,6 +46,17 @@ final class SessionModel {
     private let store: SessionStore
     private let transport: Transport
 
+    /// The scene phase, seen from the model: activation starts a restrained
+    /// poll, the background stops it. No view feeds it. The tokens are
+    /// written on the main actor only; `deinit` reads them for cleanup,
+    /// when the instance is already exclusively owned, so they sit outside
+    /// the actor's checking and out of the observable storage.
+    @ObservationIgnored nonisolated(unsafe) private var activeObservation: Any?
+    @ObservationIgnored nonisolated(unsafe) private var resignObservation: Any?
+    @ObservationIgnored nonisolated(unsafe) private var poll: Task<Void, Never>?
+
+    private static let pollInterval: Duration = .seconds(30)
+
     init(
         host: HostStore = UserDefaultsHostStore(),
         storage: SessionStorage = KeychainSessionStorage(service: "io.taina.app"),
@@ -75,6 +87,7 @@ final class SessionModel {
     /// still reading storage, and the link wins: it already decided the
     /// screen, so the restore writes only while nothing else has.
     func restore() async {
+        await observeScene()
 #if DEBUG
         if await autoConfigure() { return }
 #endif
@@ -107,33 +120,61 @@ final class SessionModel {
 #endif
 
     /// Validates what was typed, asks the box, and keeps the address when
-    /// the community answers. A box that answers but has no community yet
-    /// is its own outcome: the address is not saved, and Setup explains it.
+    /// the community answers. A bare host tries https first and then http,
+    /// because the pilot box answers plain http; an explicit scheme is
+    /// tried as typed. A box that answers but has no community yet is its
+    /// own outcome: the address is not saved, and Setup explains it.
     func connect(_ input: String) async -> TainaResult<Instance> {
         notice = nil
         instance = nil
-        switch InstanceAddress.parse(input: input) {
+        switch InstanceAddress.candidates(input: input) {
         case .failure(let error):
             return .failure(error)
-        case .success(let address):
-            // The probe talks to the typed address without saving it: only
-            // a bootstrapped community earns a place in the store.
-            let probe = LiveTainaAPI(transport: transport, host: InMemoryHostStore(address), session: store)
-            let result = await probe.instance()
-            switch result {
-            case .success(let found):
-                instance = found
-                guard found.bootstrapped else {
-                    return .success(found)
-                }
-                host = address
-                _ = await hostStore.save(address)
-                state = .needsLogin
-                return .success(found)
-            case .failure:
-                return result
-            }
+        case .success(let candidates):
+            return await connect(candidates)
         }
+    }
+
+    /// Tries the candidates in order and keeps the first address the box
+    /// answers; when none does, the primary's failure is the answer the
+    /// screen shows.
+    private func connect(_ candidates: InstanceAddress.Candidates) async -> TainaResult<Instance> {
+        let first = await probeInstance(at: candidates.primary)
+        if Self.unreachable(first), let fallback = candidates.fallback {
+            let second = await probeInstance(at: fallback)
+            if Self.unreachable(second) {
+                return first
+            }
+            return await settleConnect(second, at: fallback)
+        }
+        return await settleConnect(first, at: candidates.primary)
+    }
+
+    /// Nothing answered: the transport never reached a box. The one
+    /// failure where the person can act, so the screens say which three
+    /// things to check instead of the generic sentence.
+    private static func unreachable(_ result: TainaResult<Instance>) -> Bool {
+        guard case .failure(.network) = result else { return false }
+        return true
+    }
+
+    private func probeInstance(at address: InstanceAddress) async -> TainaResult<Instance> {
+        let probe = LiveTainaAPI(transport: transport, host: InMemoryHostStore(address), session: store)
+        return await probe.instance()
+    }
+
+    /// A box that answered earns the address: kept, saved, and the app
+    /// moves on to the login.
+    private func settleConnect(_ result: TainaResult<Instance>, at address: InstanceAddress) async -> TainaResult<Instance> {
+        guard case .success(let found) = result else { return result }
+        instance = found
+        guard found.bootstrapped else {
+            return .success(found)
+        }
+        host = address
+        _ = await hostStore.save(address)
+        state = .needsLogin
+        return .success(found)
     }
 
     /// Creates the session, keeps it, and confirms with the box before
@@ -155,6 +196,13 @@ final class SessionModel {
     /// the same way a login lands.
     func resetPassword(token: String, password: String, deviceName: String) async -> TainaResult<Me> {
         await settle(await api.resetPassword(token: token, password: password, deviceName: deviceName))
+    }
+
+    /// The self-service password change, while signed in: the box keeps
+    /// this aparelho's token and revokes the others. The client returns the
+    /// app's value, so there is nothing to convert here.
+    func updatePassword(current: String, new: String) async -> TainaResult<Void> {
+        await api.updatePassword(current: current, new: new)
     }
 
     /// The tail every sign in shares, whatever produced the session: store
@@ -204,7 +252,28 @@ final class SessionModel {
     /// not block the token, whose check happens on the screen. A malformed
     /// link changes nothing.
     func handleDeepLink(_ url: URL) async {
-        guard let link = DeepLink.parse(url) else { return }
+        await open(DeepLink.parse(url))
+    }
+
+    /// The invite or reset link pasted as text, resolved through the same
+    /// path a tapped link takes. Returns the sentence for what blocked
+    /// it, or nil when the deep-link screen took over: the two ways a
+    /// paste cannot open are a link that is not ours, and a link that
+    /// says nothing about which box while none is saved yet.
+    func openPastedInvite(_ text: String) async -> String? {
+        guard let link = DeepLink.parse(pasted: text) else {
+            return "Este link não pôde ser lido. Confira se copiou o link inteiro, do começo ao fim."
+        }
+        if link.box == nil, await hostStore.address() == nil {
+            return "O link não diz qual é a comunidade e nenhuma foi conectada ainda. Peça o link completo a quem convidou você."
+        }
+        await open(link)
+        return nil
+    }
+
+    /// The tail of every arrival, tapped or pasted.
+    private func open(_ link: DeepLink?) async {
+        guard let link else { return }
         let box: InstanceAddress
         if let typed = link.box {
             guard case .success(let parsed) = InstanceAddress.parse(input: typed) else { return }
@@ -267,6 +336,80 @@ final class SessionModel {
         if case .success(let found) = await api.instance(), found.bootstrapped {
             instance = found
         }
+    }
+
+    /// The scene is active again (or the poll ticked): the box may have
+    /// moved on, and the token may have been revoked elsewhere. A fresh
+    /// `me` keeps the identity and its quota honest and re-saves it; a
+    /// revoked or deactivated session leaves through `screen`, with its
+    /// sentence on the login. A box away for a moment changes nothing,
+    /// and the deep-link screens decide on their own.
+    func refresh() async {
+        switch state {
+        case .ready:
+            let result = await screen(await api.me())
+            if case .success(let me) = result {
+                state = .ready(me)
+                _ = await store.refreshIdentity(me)
+            }
+        case .needsLogin, .needsInstance:
+            await probe()
+        case .checking, .pendingAuth:
+            break
+        }
+    }
+
+    /// The scene phase, seen from the model: the app observes its own
+    /// activation through the system notifications, so no view needs to
+    /// feed it. The poll exists only while the scene is active, and the
+    /// launch activation can land before this registration, so an already
+    /// active scene starts it now.
+    private func observeScene() async {
+        guard activeObservation == nil else { return }
+        let center = NotificationCenter.default
+        activeObservation = center.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.sceneActivated() }
+        }
+        resignObservation = center.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.sceneDeactivated() }
+        }
+        if UIApplication.shared.applicationState == .active {
+            await sceneActivated()
+        }
+    }
+
+    private func sceneActivated() async {
+        guard poll == nil else { return }
+        await refresh()
+        poll = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: Self.pollInterval)
+                } catch {
+                    return  // the scene went to the background: the poll stops
+                }
+                await self?.refresh()
+            }
+        }
+    }
+
+    private func sceneDeactivated() {
+        poll?.cancel()
+        poll = nil
+    }
+
+    deinit {
+        if let activeObservation { NotificationCenter.default.removeObserver(activeObservation) }
+        if let resignObservation { NotificationCenter.default.removeObserver(resignObservation) }
+        poll?.cancel()
     }
 
     /// Points the app at an address without probing: the preview and UI

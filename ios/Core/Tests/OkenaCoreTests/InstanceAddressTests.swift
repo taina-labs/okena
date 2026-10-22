@@ -106,3 +106,31 @@ import Testing
     let address = try #require(InstanceAddress.parse(input: "https://taina.minhacasa.ts.net:8443").value)
     #expect(address.display == "taina.minhacasa.ts.net")
 }
+
+@Test func bareHostOffersAnHTTPFallback() throws {
+    // The pilot box answers http; a bare host must not dead-end on the https
+    // the parse assumed. The fallback is the same host one scheme down.
+    let candidates = try #require(InstanceAddress.candidates(input: "taina.yby").value)
+    #expect(candidates.primary.url.absoluteString == "https://taina.yby")
+    #expect(candidates.fallback?.url.absoluteString == "http://taina.yby")
+}
+
+@Test func explicitSchemeHasNoFallback() throws {
+    let https = try #require(InstanceAddress.candidates(input: "https://taina.yby").value)
+    #expect(https.fallback == nil)
+
+    let http = try #require(InstanceAddress.candidates(input: "http://taina.yby").value)
+    #expect(http.primary.url.absoluteString == "http://taina.yby")
+    #expect(http.fallback == nil)
+}
+
+@Test func fallbackKeepsThePort() throws {
+    let candidates = try #require(InstanceAddress.candidates(input: "taina.yby:4000").value)
+    #expect(candidates.primary.url.absoluteString == "https://taina.yby:4000")
+    #expect(candidates.fallback?.url.absoluteString == "http://taina.yby:4000")
+}
+
+@Test func candidatesCarryTheParseError() {
+    #expect(InstanceAddress.candidates(input: "").error == .invalidAddress(.empty))
+    #expect(InstanceAddress.candidates(input: "ftp://x").error == .invalidAddress(.unsupportedScheme))
+}

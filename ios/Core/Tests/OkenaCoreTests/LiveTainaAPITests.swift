@@ -16,7 +16,7 @@ private let contentsJSON = """
 """
 
 private let fileJSON = """
-{"rkey":"3n4b9uxrw6a3","cid":"bp3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8","blob_cid":"bq4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9","sha256":"aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00ee11ff22aa33bb44cc55dd66","name":"ata.pdf","mime":"application/pdf","size":19,"zona":"casa","folder":"3kx2n8pqrv5w2","deleted_at":null,"created_at":"2026-10-14T08:00:00Z","updated_at":"2026-10-14T08:00:00Z"}
+{"rkey":"3n4b9uxrw6a3","cid":"bp3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8","blob_cid":"bq4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9","sha256":"aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00ee11ff22aa33bb44cc55dd66","name":"ata.pdf","mime":"application/pdf","size":19,"zona":"casa","folder":"3kx2n8pqrv5w2","taken_at":null,"width":null,"height":null,"rendition":"none","deleted_at":null,"created_at":"2026-10-14T08:00:00Z","updated_at":"2026-10-14T08:00:00Z"}
 """
 
 private let folderJSON = """
@@ -28,7 +28,11 @@ private let updatedFolderJSON = """
 """
 
 private let fotoJSON = """
-{"rkey":"3m7d1wyzr4c8u","cid":"bt6u7v8w9x0y1z2a3b4c5d6e7f8g9h0i1","blob_cid":"bu7v8w9x0y1z2a3b4c5d6e7f8g9h0i1j2","sha256":"cc33dd44ee55ff66aa77bb88cc99dd00ee11ff22aa33bb44cc55dd66aa11bb22","name":"Foto da quadra.jpg","mime":"image/jpeg","size":1204331,"zona":"praca","folder":null,"deleted_at":null,"created_at":"2026-06-21T21:12:00Z","updated_at":"2026-06-21T21:12:00Z"}
+{"rkey":"3m7d1wyzr4c8u","cid":"bt6u7v8w9x0y1z2a3b4c5d6e7f8g9h0i1","blob_cid":"bu7v8w9x0y1z2a3b4c5d6e7f8g9h0i1j2","sha256":"cc33dd44ee55ff66aa77bb88cc99dd00ee11ff22aa33bb44cc55dd66aa11bb22","name":"Foto da quadra.jpg","mime":"image/jpeg","size":1204331,"zona":"praca","folder":null,"taken_at":"2026-06-21T21:12:00Z","width":4032,"height":3024,"rendition":"ready","deleted_at":null,"created_at":"2026-06-21T21:12:00Z","updated_at":"2026-06-21T21:12:00Z"}
+"""
+
+private let pendingFotoJSON = """
+{"rkey":"3m8e2xz0s5d9v","cid":"bv8w9x0y1z2a3b4c5d6e7f8g9h0i1j2k3","blob_cid":"bw9x0y1z2a3b4c5d6e7f8g9h0i1j2k3l4","sha256":"dd44ee55ff66aa77bb88cc99dd00ee11ff22aa33bb44cc55dd66aa11bb22cc33","name":"Cartaz da festa.jpg","mime":"image/jpeg","size":934221,"zona":"praca","folder":null,"taken_at":null,"width":null,"height":null,"rendition":"pending","deleted_at":null,"created_at":"2026-06-21T20:30:00Z","updated_at":"2026-06-21T20:30:00Z"}
 """
 
 private let filePageJSON = "{\"items\":[" + fileJSON + "],\"next_cursor\":\"12\"}"
@@ -858,4 +862,424 @@ private let inviteToken = "tk9x2m5qp7w4v8"
     #expect(body.contains("\"device_name\":\"iPhone da Joana\""))
     #expect(!body.contains("username"))
     #expect(!body.contains("confirmation"))
+}
+
+// MARK: the file wrapper (contract A)
+
+/// The photo fields are the box's own read of the metadata: the client
+/// never re-reads the bytes to order or group.
+@Test func fileDecodesThePhotoFields() async throws {
+    let (api, _) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/photos"), 200, body: "{\"items\":[\(fotoJSON),\(pendingFotoJSON)],\"next_cursor\":null}"))
+    })
+
+    let page = try #require(await api.photos(limit: nil, cursor: nil).value)
+    let ready = try #require(page.items.first)
+    #expect(ready.takenAt == "2026-06-21T21:12:00Z")
+    #expect(ready.width == 4032)
+    #expect(ready.height == 3024)
+    #expect(ready.rendition == .ready)
+    #expect(page.items.last?.rendition == .pending)
+    #expect(page.items.last?.takenAt == nil)
+}
+
+// MARK: the manifest (contract C1)
+
+@Test func manifestWalksByTheRkeyAndQueriesThePage() async throws {
+    let manifestPage = "{\"items\":[\(fileJSON)],\"next_cursor\":null}"
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/files/manifest"), 200, body: manifestPage))
+    })
+
+    let page = try #require(await api.manifest(after: "3m2a8twqpv5z2", limit: 200).value)
+    #expect(page.items.map(\.sha256) == ["aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00ee11ff22aa33bb44cc55dd66"])
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.url?.path == "/api/v1/files/manifest")
+    #expect(request.url?.query == "after=3m2a8twqpv5z2&limit=200")
+}
+
+// MARK: the batch (contract C2)
+
+@Test func batchPostsTheOpAndReadsPartialFailure() async throws {
+    let body = """
+    {"results":[
+        {"rkey":"3m2a8twqpv5z2","ok":true,"file":\(fileJSON)},
+        {"rkey":"3m5c9vxyq2b7t","ok":false,"error":"not_owner"}
+    ]}
+    """
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/files/batch"), 200, body: body))
+    })
+
+    let outcomes = try #require(await api.batch(op: .trash, ids: ["3m2a8twqpv5z2", "3m5c9vxyq2b7t"], folderRkey: nil).value)
+    #expect(outcomes.count == 2)
+    #expect(outcomes[0].ok)
+    #expect(outcomes[0].file?.name == "ata.pdf")
+    #expect(!outcomes[1].ok)
+    #expect(outcomes[1].error == "not_owner")
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "POST")
+    #expect(request.url?.absoluteString == "https://box/api/v1/files/batch")
+    let sent = String(decoding: try #require(request.httpBody), as: UTF8.self)
+    #expect(sent.contains("\"op\":\"trash\""))
+    #expect(sent.contains("\"ids\":[\"3m2a8twqpv5z2\",\"3m5c9vxyq2b7t\"]"))
+}
+
+@Test func batchMoveCarriesTheFolder() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/files/batch"), 200, body: "{\"results\":[]}"))
+    })
+
+    _ = await api.batch(op: .move, ids: ["3m2a8twqpv5z2"], folderRkey: "3kx2n8pqrv5w2")
+
+    let sent = String(decoding: try #require(await stub.recorder.requests().first).httpBody ?? Data(), as: UTF8.self)
+    #expect(sent.contains("\"folder\":\"3kx2n8pqrv5w2\""))
+}
+
+@Test func batchMoveToTheRootOmitsTheFolder() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/files/batch"), 200, body: "{\"results\":[]}"))
+    })
+
+    _ = await api.batch(op: .move, ids: ["3m2a8twqpv5z2"], folderRkey: nil)
+
+    let sent = String(decoding: try #require(await stub.recorder.requests().first).httpBody ?? Data(), as: UTF8.self)
+    #expect(!sent.contains("folder"))
+}
+
+// MARK: the grants (contracts C3 and C4)
+
+@Test func grantsQueriesTheRoleAndDecodesThePage() async throws {
+    let grantsPage = "{\"items\":[\(concessaoJSON)],\"next_cursor\":null}"
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/grants"), 200, body: grantsPage))
+    })
+
+    let given = try #require(await api.grants(role: .owner).value)
+    #expect(given.items.first?.leitor?.username == "joana")
+    #expect(given.items.first?.revogadaEm == nil)
+
+    let received = try #require(await api.grants(role: .reader).value)
+    #expect(received.items.first?.dono?.username == "ana")
+
+    let requests = await stub.recorder.requests()
+    #expect(try #require(requests.first).url?.query == "role=owner")
+    #expect(try #require(requests.last).url?.query == "role=reader")
+}
+
+@Test func revokeGrantSendsDeleteToTheGrantPath() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(nil, 204))
+    })
+
+    #expect(await api.revokeGrant(id: "con4kx9mq2v7w5").value != nil)
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "DELETE")
+    #expect(request.url?.absoluteString == "https://box/api/v1/grants/con4kx9mq2v7w5")
+}
+
+@Test func revokeGrantReadsTheConflictOfASecondRevoke() async throws {
+    let body = """
+    {"error":{"code":"invalid_status","message":"Este acesso já foi revogado."}}
+    """
+    let (api, _) = try await signedInAPI(answer: { _ in
+        .success(http(nil, 409, body: body))
+    })
+
+    guard case .api(let apiError) = await api.revokeGrant(id: "con4kx9mq2v7w5").error else {
+        #expect(Bool(false), "expected .api")
+        return
+    }
+    #expect(apiError.isConflict)
+    #expect(apiError.code == "invalid_status")
+}
+
+// MARK: the password change (contract C5)
+
+@Test func updatePasswordPostsBothPasswordsToTheSessionPath() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/session/password"), 200, body: "{\"ok\":true}"))
+    })
+
+    #expect(await api.updatePassword(current: "segredo", new: "novo-segredo").value != nil)
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "POST")
+    #expect(request.url?.absoluteString == "https://box/api/v1/session/password")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tnd_abcdef0123456789abcdef0123456789")
+    let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+    #expect(body.contains("\"current_password\":\"segredo\""))
+    #expect(body.contains("\"new_password\":\"novo-segredo\""))
+}
+
+@Test func updatePasswordReadsTheWrongCurrentPassword() async throws {
+    let body = """
+    {"error":{"code":"invalid_credentials","message":"A senha atual não confere."}}
+    """
+    let (api, _) = try await signedInAPI(answer: { _ in
+        .success(http(nil, 403, body: body))
+    })
+
+    guard case .api(let apiError) = await api.updatePassword(current: "errada", new: "novo-segredo").error else {
+        #expect(Bool(false), "expected .api")
+        return
+    }
+    #expect(apiError.code == "invalid_credentials")
+    #expect(apiError.status == 403)
+    // A wrong current password is NOT a dead session: the caller is
+    // authenticated and the screen keeps the form.
+    #expect(!apiError.isUnauthorized)
+}
+
+// MARK: the zeladora's acts (contract F)
+
+@Test func inviteMemberPostsThePapelAndReadsTheOnceLink() async throws {
+    let inviteJSON = """
+    {"ava":{"public_id":"avatk9x2m5qp7w","username":null,"display_name":null,"papel":"morador","activated_at":null,"deactivated_at":null,"created_at":"2026-10-14T08:00:00Z"},"token":"tk9x2m5qp7w4v8","invite_url":"taina://convite/tk9x2m5qp7w4v8?host=taina.sapukai.ts.net"}
+    """
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/members"), 201, body: inviteJSON))
+    })
+
+    let invite = try #require(await api.inviteMember(papel: .morador).value)
+    #expect(invite.token == "tk9x2m5qp7w4v8")
+    #expect(invite.inviteUrl.hasPrefix("taina://convite/"))
+    #expect(invite.ava.username == nil)
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "POST")
+    #expect(request.url?.absoluteString == "https://box/api/v1/members")
+    let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+    #expect(body.contains("\"papel\":\"morador\""))
+}
+
+@Test func updateMemberPatchesThePapel() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/members/avaq7r2m5xk9p1"), 200, body: anaJSON))
+    })
+
+    let updated = try #require(await api.updateMember(id: "avaq7r2m5xk9p1", papel: .zelador).value)
+    #expect(updated.papel == .zelador)
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "PATCH")
+    let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+    #expect(body.contains("\"papel\":\"zelador\""))
+}
+
+@Test func deactivateReactivateRevokeInviteAndResetLinkHitTheirPaths() async throws {
+    let resetLinkJSON = """
+    {"ava":\(joanaJSON),"token":"tk9x2m5qp7w4v8","reset_url":"taina://redefinir/tk9x2m5qp7w4v8?host=taina.sapukai.ts.net"}
+    """
+    let stub = StubTransport { call in
+        guard case .send(let request) = call else {
+            return .failure(.invalidResponse("expected a send"))
+        }
+        let path = request.url?.path ?? ""
+        if path.hasSuffix("/reset-link") {
+            return .success(http(request.url, 201, body: resetLinkJSON))
+        }
+        if path.hasSuffix("/reactivate") {
+            return .success(http(request.url, 200, body: joanaJSON))
+        }
+        return .success(http(nil, 204))
+    }
+    let store = SessionStore(storage: InMemorySessionStorage())
+    #expect(await store.signIn(try fixturedSession()).value != nil)
+    let api = LiveTainaAPI(transport: stub, host: InMemoryHostStore(try boxAddress()), session: store)
+
+    #expect(await api.deactivateMember(id: "avaq7r2m5xk9p1").value != nil)
+    #expect(await api.reactivateMember(id: "avaq7r2m5xk9p1").value != nil)
+    #expect(await api.revokeInvite(id: "avatk9x2m5qp7w").value != nil)
+    let link = try #require(await api.memberResetLink(id: "avaq7r2m5xk9p1").value)
+    #expect(link.resetUrl.hasPrefix("taina://redefinir/"))
+
+    let requests = await stub.recorder.requests()
+    #expect(try #require(requests.first).httpMethod == "DELETE")
+    #expect(try #require(requests.first).url?.path == "/api/v1/members/avaq7r2m5xk9p1")
+    #expect(try #require(requests.dropFirst().first).url?.path == "/api/v1/members/avaq7r2m5xk9p1/reactivate")
+    #expect(try #require(requests.dropFirst(2).first).url?.path == "/api/v1/members/avatk9x2m5qp7w/invite")
+    #expect(try #require(requests.dropFirst(3).first).url?.path == "/api/v1/members/avaq7r2m5xk9p1/reset-link")
+    #expect(try #require(requests.dropFirst(3).first).httpMethod == "POST")
+}
+
+@Test func setQuotaPatchesTheBytesAndReadsTheTekoa() async throws {
+    let tekoaJSON = """
+    {"public_id":"tekp2xw5m8q3","name":"Tekoa Sapukai","domain":"taina.sapukai.ts.net","storage_quota_bytes":536870912000,"storage_used_bytes":1832110000,"created_at":"2026-02-01T09:00:00Z"}
+    """
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/storage/quota"), 200, body: tekoaJSON))
+    })
+
+    let tekoa = try #require(await api.setQuota(bytes: 536_870_912_000).value)
+    #expect(tekoa.storageQuotaBytes == 536_870_912_000)
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "PATCH")
+    #expect(request.url?.absoluteString == "https://box/api/v1/storage/quota")
+    let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+    #expect(body.contains("\"quota_bytes\":536870912000"))
+}
+
+@Test func triggerBackupPostsToTheSaudePath() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/saude/backup"), 202, body: "{\"scheduled\":true}"))
+    })
+
+    #expect(await api.triggerBackup().value != nil)
+
+    let request = try #require(await stub.recorder.requests().first)
+    #expect(request.httpMethod == "POST")
+    #expect(request.url?.absoluteString == "https://box/api/v1/saude/backup")
+}
+
+// MARK: the conditional reads (contract D)
+
+/// The collection reads carry the tag the box sent with the last
+/// answer, so the box can answer 304 and spare the listing.
+@Test func aConditionalReadSendsTheTagItKept() async throws {
+    let (api, stub) = try await signedInAPI(answer: { _ in
+        .success(http(URL(string: "https://box/api/v1/trash"), 200, body: filePageJSON, headers: ["ETag": "W/\"5-1760000000\""]))
+    })
+
+    _ = await api.trash(limit: nil, cursor: nil)
+    _ = await api.trash(limit: nil, cursor: nil)
+
+    let requests = await stub.recorder.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].value(forHTTPHeaderField: "If-None-Match") == nil)
+    #expect(requests[1].value(forHTTPHeaderField: "If-None-Match") == "W/\"5-1760000000\"")
+}
+
+/// The 304 carries no body: the page is the one kept before, decoded
+/// again, so the caller always receives a full page.
+@Test func a304AnswersThePageItKept() async throws {
+    let (api, _) = try await signedInAPI(answer: { call in
+        guard case .send(let request) = call else {
+            return .failure(.invalidResponse("expected a send"))
+        }
+        if request.value(forHTTPHeaderField: "If-None-Match") != nil {
+            return .success(http(request.url, 304))
+        }
+        return .success(http(request.url, 200, body: filePageJSON, headers: ["ETag": "W/\"5-1760000000\""]))
+    })
+
+    let first = try #require(await api.trash(limit: nil, cursor: nil).value)
+    let second = try #require(await api.trash(limit: nil, cursor: nil).value)
+    #expect(second.items.map(\.rkey) == first.items.map(\.rkey))
+    #expect(second.nextCursor == first.nextCursor)
+}
+
+/// A new tag replaces the old one, so the next read conditions on the
+/// answer the box just gave.
+@Test func aNewTagReplacesTheKeptOne() async throws {
+    let counter = Counter()
+    let (api, stub) = try await signedInAPI(answer: { call in
+        guard case .send(let request) = call else {
+            return .failure(.invalidResponse("expected a send"))
+        }
+        let current = await counter.next()
+        let tag = current == 1 ? "W/\"5-1\"" : "W/\"7-2\""
+        return .success(http(request.url, 200, body: filePageJSON, headers: ["ETag": tag]))
+    })
+
+    _ = await api.trash(limit: nil, cursor: nil)
+    _ = await api.trash(limit: nil, cursor: nil)
+    _ = await api.trash(limit: nil, cursor: nil)
+
+    let requests = await stub.recorder.requests()
+    #expect(requests.count == 3)
+    #expect(requests[1].value(forHTTPHeaderField: "If-None-Match") == "W/\"5-1\"")
+    #expect(requests[2].value(forHTTPHeaderField: "If-None-Match") == "W/\"7-2\"")
+}
+
+/// A 200 without a tag leaves nothing to condition on: the entry drops
+/// and the next read goes bare.
+@Test func a200WithoutATagDropsTheKeptEntry() async throws {
+    let (api, stub) = try await signedInAPI(answer: { call in
+        guard case .send(let request) = call else {
+            return .failure(.invalidResponse("expected a send"))
+        }
+        if request.value(forHTTPHeaderField: "If-None-Match") != nil {
+            return .success(http(request.url, 200, body: filePageJSON))
+        }
+        return .success(http(request.url, 200, body: filePageJSON, headers: ["ETag": "W/\"5-1760000000\""]))
+    })
+
+    _ = await api.trash(limit: nil, cursor: nil)
+    _ = await api.trash(limit: nil, cursor: nil)
+    _ = await api.trash(limit: nil, cursor: nil)
+
+    let requests = await stub.recorder.requests()
+    #expect(requests[1].value(forHTTPHeaderField: "If-None-Match") == "W/\"5-1760000000\"")
+    #expect(requests[2].value(forHTTPHeaderField: "If-None-Match") == nil)
+}
+
+/// The etag is scope-local: another session's tag is not ours to send,
+/// so the cache key carries the token beside the request.
+@Test func theConditionalCacheKeyCarriesTheSession() {
+    #expect(LiveTainaAPI.cacheKey(URL(string: "https://box/api/v1/trash"), token: "tnd_a") != LiveTainaAPI.cacheKey(URL(string: "https://box/api/v1/trash"), token: "tnd_b"))
+    #expect(LiveTainaAPI.cacheKey(URL(string: "https://box/api/v1/trash"), token: "tnd_a") == LiveTainaAPI.cacheKey(URL(string: "https://box/api/v1/trash"), token: "tnd_a"))
+    #expect(LiveTainaAPI.cacheKey(URL(string: "https://box/api/v1/trash"), token: "tnd_a") != LiveTainaAPI.cacheKey(URL(string: "https://box/api/v1/photos"), token: "tnd_a"))
+}
+
+// MARK: the content-disposition name (review 0.1.0, section 5)
+
+/// The extended `filename*=` form is the one that survives an accent;
+/// the plain parameter is the fallback, never the winner.
+@Test func theDownloadNameComesFromTheExtendedFormFirst() {
+    let both = http(nil, 200, headers: [
+        "Content-Disposition": "attachment; filename=\"Fotografia da praca.jpg\"; filename*=UTF-8''Fotografia%20da%20pra%C3%A7a.jpg"
+    ])
+    #expect(LiveTainaAPI.attachmentFilename(in: both) == "Fotografia da praça.jpg")
+
+    let extended = http(nil, 200, headers: [
+        "Content-Disposition": "attachment; filename*=UTF-8''Reuni%C3%A3o%20de%20domingo.pdf"
+    ])
+    #expect(LiveTainaAPI.attachmentFilename(in: extended) == "Reunião de domingo.pdf")
+}
+
+@Test func thePlainNameAnswersWhenTheExtendedFormDoesNotParse() {
+    let charset = http(nil, 200, headers: [
+        "Content-Disposition": "attachment; filename=\"relatorio.pdf\"; filename*=iso-8859-1''relat%F3rio.pdf"
+    ])
+    #expect(LiveTainaAPI.attachmentFilename(in: charset) == "relatorio.pdf")
+
+    let broken = http(nil, 200, headers: [
+        "Content-Disposition": "attachment; filename=\"relatorio.pdf\"; filename*=UTF-8''"
+    ])
+    #expect(LiveTainaAPI.attachmentFilename(in: broken) == "relatorio.pdf")
+
+    let plain = http(nil, 200, headers: [
+        "Content-Disposition": "attachment; filename=\"relatorio anual.pdf\""
+    ])
+    #expect(LiveTainaAPI.attachmentFilename(in: plain) == "relatorio anual.pdf")
+
+    let absent = http(nil, 200)
+    #expect(LiveTainaAPI.attachmentFilename(in: absent) == nil)
+}
+
+/// The whole download names the file the extended form carries, so the
+/// person reads the accented name in the share sheet.
+@Test func downloadKeepsTheAccentedName() async throws {
+    let stubFile = FileManager.default.temporaryDirectory
+        .appending(path: "stub-download-\(UUID().uuidString)")
+    try Data("BYTES".utf8).write(to: stubFile)
+
+    let (api, _) = try await signedInAPI(answer: { _ in
+        .success(http(
+            URL(string: "https://box/api/v1/files/3m2a8twqpv5z2/download"),
+            200,
+            headers: [
+                "Content-Disposition": "attachment; filename=\"ata da reuniao.pdf\"; filename*=UTF-8''ata%20da%20reuni%C3%A3o.pdf"
+            ],
+            fileURL: stubFile
+        ))
+    })
+
+    let url = try #require(await api.download(rkey: "3m2a8twqpv5z2").value)
+    #expect(url.lastPathComponent == "ata da reunião.pdf")
 }

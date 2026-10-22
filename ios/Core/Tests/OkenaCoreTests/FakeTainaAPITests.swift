@@ -378,3 +378,187 @@ private let estatutoRkey = "3m2a8twqpv5z2"
         #expect(apiError.code == "invalid_token")
     }
 }
+
+// MARK: the manifest and the batch
+
+@Test func theManifestListsEveryLivingFileOldestFirstAndWalksByRkey() async throws {
+    let fake = FakeTainaAPI()
+
+    let first = try #require(await fake.manifest(after: nil, limit: 2).value)
+    #expect(first.items.map(\.rkey) == ["3m2a8twqpv5z2", "3m5c9vxyq2b7t"])
+    #expect(first.nextCursor == "3m5c9vxyq2b7t")
+
+    let second = try #require(await fake.manifest(after: first.nextCursor, limit: 2).value)
+    #expect(second.items.map(\.rkey) == ["3m7d1wyzr4c8u", "3m8e2xz0s5d9v"])
+    #expect(second.nextCursor == "3m8e2xz0s5d9v")
+
+    let end = try #require(await fake.manifest(after: second.nextCursor, limit: 2).value)
+    #expect(end.items.map(\.rkey) == ["3m9f4xk1q7v2n"])
+    #expect(end.nextCursor == nil)
+
+    // The trash is not a backup: a deleted file is not in the manifest.
+    #expect(await fake.deleteFile(rkey: estatutoRkey).value != nil)
+    let afterTrash = try #require(await fake.manifest(after: nil, limit: nil).value)
+    #expect(!afterTrash.items.contains { $0.rkey == estatutoRkey })
+}
+
+@Test func theBatchAppliesEveryItemAndSaysWhatBecameOfEach() async throws {
+    let fake = FakeTainaAPI()
+
+    // One id that fails (nobody's file here fails on zone, so an unknown
+    // one stands in) and one that works: the batch does not stop.
+    let outcomes = try #require(await fake.batch(op: .trash, ids: [estatutoRkey, "3zzzzzzzzzzzz"], folderRkey: nil).value)
+    #expect(outcomes.first?.ok == true)
+    #expect(outcomes.first?.file?.deletedAt != nil)
+    #expect(outcomes.last?.ok == false)
+    #expect(outcomes.last?.error == "not_found")
+
+    // The trash answers, and the restore brings it back by the same door.
+    let restored = try #require(await fake.batch(op: .restore, ids: [estatutoRkey], folderRkey: nil).value)
+    #expect(restored.first?.ok == true)
+    #expect(restored.first?.file?.deletedAt == nil)
+
+    let published = try #require(await fake.batch(op: .publish, ids: [estatutoRkey], folderRkey: nil).value)
+    #expect(published.first?.file?.zona == .praca)
+
+    let unpublished = try #require(await fake.batch(op: .unpublish, ids: [estatutoRkey], folderRkey: nil).value)
+    #expect(unpublished.first?.file?.zona == .casa)
+
+    let moved = try #require(await fake.batch(op: .move, ids: [estatutoRkey], folderRkey: assembleiaRkey).value)
+    #expect(moved.first?.file?.folder == assembleiaRkey)
+}
+
+@Test func theBatchRefusesMoreThanTwoHundredIds() async {
+    let ids = (0...200).map { "3m2a8twqpv5z\($0)" }
+    guard case .api(let apiError) = await FakeTainaAPI().batch(op: .trash, ids: ids, folderRkey: nil).error else {
+        #expect(Bool(false), "expected .api")
+        return
+    }
+    #expect(apiError.isValidationFailed)
+}
+
+// MARK: the grants
+
+@Test func theGrantsListBothSidesOfTheCaller() async throws {
+    let fake = FakeTainaAPI()
+    #expect(await fake.createSession(username: "ana", password: "segredo", deviceName: "Teste").value != nil)
+
+    let given = try #require(await fake.grants(role: .owner).value)
+    #expect(given.items.map(\.publicId) == ["con3qk9mq2v7w1"])
+    #expect(given.items.first?.dono?.username == "ana")
+
+    let received = try #require(await fake.grants(role: .reader).value)
+    #expect(received.items.map(\.publicId) == ["con5rk2mq8v3w7"])
+    #expect(received.items.first?.revogadaEm != nil)
+}
+
+@Test func revokingMarksTheClockOnceAndConflictsTheSecondTime() async throws {
+    let fake = FakeTainaAPI()
+    #expect(await fake.createSession(username: "ana", password: "segredo", deviceName: "Teste").value != nil)
+
+    #expect(await fake.revokeGrant(id: "con3qk9mq2v7w1").value != nil)
+    let given = try #require(await fake.grants(role: .owner).value)
+    #expect(given.items.first?.revogadaEm != nil)
+
+    guard case .api(let apiError) = await fake.revokeGrant(id: "con3qk9mq2v7w1").error else {
+        #expect(Bool(false), "expected .api")
+        return
+    }
+    #expect(apiError.isConflict)
+    #expect(apiError.code == "invalid_status")
+
+    guard case .api(let missing) = await fake.revokeGrant(id: "con-nao-existe").error else {
+        #expect(Bool(false), "expected .api")
+        return
+    }
+    #expect(missing.isNotFound)
+}
+
+// MARK: the password change
+
+@Test func thePasswordChangeSaysWhatTheBoxWouldSay() async throws {
+    let fake = FakeTainaAPI()
+    #expect(await fake.createSession(username: "ana", password: "segredo", deviceName: "Teste").value != nil)
+
+    #expect(await fake.updatePassword(current: "qualquer", new: "nova-senha").value != nil)
+
+    guard case .api(let wrong) = await fake.updatePassword(current: "errada", new: "nova-senha").error else {
+        #expect(Bool(false), "expected .api")
+        return
+    }
+    #expect(wrong.code == "invalid_credentials")
+    #expect(wrong.status == 403)
+
+    guard case .api(let weak) = await fake.updatePassword(current: "qualquer", new: "curta").error else {
+        #expect(Bool(false), "expected .api")
+        return
+    }
+    #expect(weak.isValidationFailed)
+}
+
+// MARK: the zeladora's acts
+
+@Test func theZeladoraRunsTheWholeRoster() async throws {
+    let fake = FakeTainaAPI()
+    #expect(await fake.createSession(username: "ana", password: "segredo", deviceName: "Teste").value != nil)
+
+    // The invite: the link carries the token and the box's own domain.
+    let invite = try #require(await fake.inviteMember(papel: .morador).value)
+    #expect(invite.ava.username == nil)
+    #expect(invite.inviteUrl.hasPrefix("taina://convite/\(invite.token)?host="))
+
+    // A pending invite can be taken back, once.
+    #expect(await fake.revokeInvite(id: invite.ava.publicId).value != nil)
+    let roster = try #require(await fake.members().value)
+    #expect(!roster.items.contains { $0.publicId == invite.ava.publicId })
+
+    // The role change; the last zeladora cannot step down.
+    let joana = "avaq7r2m5xk9p1"
+    let promoted = try #require(await fake.updateMember(id: joana, papel: .zelador).value)
+    #expect(promoted.papel == .zelador)
+
+    // The password link of one person.
+    let link = try #require(await fake.memberResetLink(id: joana).value)
+    #expect(link.resetUrl.hasPrefix("taina://redefinir/\(link.token)?host="))
+    #expect(link.ava.username == "joana")
+
+    // Off and on again.
+    #expect(await fake.deactivateMember(id: joana).value != nil)
+    let off = try #require(await fake.members().value)
+    #expect(off.items.first { $0.publicId == joana }?.deactivatedAt != nil)
+    let back = try #require(await fake.reactivateMember(id: joana).value)
+    #expect(back.deactivatedAt == nil)
+}
+
+@Test func theLastZeladoraCannotStepDown() async throws {
+    let fake = FakeTainaAPI()
+    #expect(await fake.createSession(username: "ana", password: "segredo", deviceName: "Teste").value != nil)
+
+    // Ana is the only zeladora of the fake's world.
+    guard case .api(let apiError) = await fake.updateMember(id: "avap2xw5m8q3", papel: .morador).error else {
+        #expect(Bool(false), "expected .api")
+        return
+    }
+    #expect(apiError.isConflict)
+    #expect(apiError.code == "last_zelador")
+}
+
+@Test func theQuotaChangesAndRefusesNothingAtAll() async throws {
+    let fake = FakeTainaAPI()
+
+    let tekoa = try #require(await fake.setQuota(bytes: 536_870_912_000).value)
+    #expect(tekoa.storageQuotaBytes == 536_870_912_000)
+
+    let stats = try #require(await fake.storage().value)
+    #expect(stats.quotaBytes == 536_870_912_000)
+
+    guard case .api(let apiError) = await fake.setQuota(bytes: 0).error else {
+        #expect(Bool(false), "expected .api")
+        return
+    }
+    #expect(apiError.isValidationFailed)
+}
+
+@Test func theBackupTriggerIsTheQueueNotTheBackup() async throws {
+    #expect(await FakeTainaAPI().triggerBackup().value != nil)
+}
