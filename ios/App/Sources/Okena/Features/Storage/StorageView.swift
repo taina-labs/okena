@@ -28,6 +28,9 @@ struct StorageView: View {
 struct StoragePanel: View {
     let model: StorageModel
 
+    @State private var showingQuota = false
+    @State private var flash: String?
+
     var body: some View {
         Group {
             if let stats = model.stats {
@@ -42,6 +45,9 @@ struct StoragePanel: View {
                             .typeStyle(Theme.Text.caption)
                             .foregroundStyle(Theme.Palette.textMuted)
                         counts(stats)
+                        if model.isZelador {
+                            quotaCard(stats)
+                        }
                     }
                     .padding(Theme.Space.space4)
                 }
@@ -54,6 +60,25 @@ struct StoragePanel: View {
         .background(Theme.Palette.bgApp)
         .task { await model.load() }
         .refreshable { await model.load() }
+        .sheet(isPresented: $showingQuota) {
+            QuotaSheet(model: model) { result in
+                if case .failure(let error) = result {
+                    flash = error.errorDescription ?? "Não deu certo salvar o limite. Tente de novo."
+                }
+            }
+        }
+        .alert(
+            "Não deu certo",
+            isPresented: Binding(
+                get: { flash != nil },
+                set: { if !$0 { flash = nil } }
+            ),
+            presenting: flash
+        ) { _ in
+            Button("Entendi", role: .cancel) {}
+        } message: { message in
+            Text(message)
+        }
     }
 
     /// The big card: the used bytes, the quota line, the bar by kind.
@@ -78,7 +103,8 @@ struct StoragePanel: View {
 
     /// "de X usados" with the free room beside it, or the absence of a
     /// limit said as a state. The color never works alone: the word "livres"
-    /// carries the meaning, the color only underlines it.
+    /// carries the meaning, the color only underlines it. A limit set
+    /// below the use says so, instead of a negative number of livres.
     private func quotaLine(_ stats: StorageStats) -> some View {
         HStack {
             if let quota = stats.quotaBytes {
@@ -86,15 +112,46 @@ struct StoragePanel: View {
                     .typeStyle(Theme.Text.bodySm)
                     .foregroundStyle(Theme.Palette.textMuted)
                 Spacer()
-                Text("\(Format.bytes(quota - stats.usedBytes)) livres")
-                    .typeStyle(Theme.Text.bodySm)
-                    .foregroundStyle(
-                        StorageModel.isLowFree(stats) ? Theme.Palette.feedbackWarning : Theme.Palette.feedbackSuccess
-                    )
+                if StorageModel.isOverQuota(stats) {
+                    Text("O limite está abaixo do que já está guardado.")
+                        .typeStyle(Theme.Text.bodySm)
+                        .foregroundStyle(Theme.Palette.feedbackWarning)
+                        .multilineTextAlignment(.trailing)
+                } else {
+                    Text("\(Format.bytes(quota - stats.usedBytes)) livres")
+                        .typeStyle(Theme.Text.bodySm)
+                        .foregroundStyle(
+                            StorageModel.isLowFree(stats) ? Theme.Palette.feedbackWarning : Theme.Palette.feedbackSuccess
+                        )
+                }
             } else {
                 Text("Sem limite definido.")
                     .typeStyle(Theme.Text.bodySm)
                     .foregroundStyle(Theme.Palette.textMuted)
+            }
+        }
+    }
+
+    /// The zeladora's limit card: the number as it stands and the way to
+    /// change it. The act is the box's to accept or refuse.
+    private func quotaCard(_ stats: StorageStats) -> some View {
+        RowCard {
+            VStack(alignment: .leading, spacing: Theme.Space.space2) {
+                Text("Limite da comunidade")
+                    .typeStyle(Theme.Text.overline)
+                    .foregroundStyle(Theme.Palette.textMuted)
+                if let quota = stats.quotaBytes {
+                    Text("\(Format.bytes(quota)) por mês de espaço para os arquivos de todo mundo.")
+                        .typeStyle(Theme.Text.bodySm)
+                        .foregroundStyle(Theme.Palette.textSecondary)
+                } else {
+                    Text("Nenhum limite definido. A caixa usa o espaço que o disco tem.")
+                        .typeStyle(Theme.Text.bodySm)
+                        .foregroundStyle(Theme.Palette.textSecondary)
+                }
+                SecondaryButton(title: "Mudar o limite") {
+                    showingQuota = true
+                }
             }
         }
     }
@@ -177,6 +234,88 @@ struct UsageBar: View {
         case .documents: Theme.Palette.serviceYbira
         case .others: Theme.Palette.textFaint
         }
+    }
+}
+
+/// The zeladora's limit form: whole gigabytes, the number the box's
+/// quota card speaks. Below the current use is allowed and said on the
+/// spot; the box has the last word.
+struct QuotaSheet: View {
+    let model: StorageModel
+    let outcome: (TainaResult<Void>) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @State private var saving = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.space4) {
+            Text("Mudar o limite")
+                .typeStyle(Theme.Text.h3)
+                .foregroundStyle(Theme.Palette.textPrimary)
+            Text("O espaço total da comunidade, em gigabytes. A lixeira conta até a limpeza passar.")
+                .typeStyle(Theme.Text.bodySm)
+                .foregroundStyle(Theme.Palette.textSecondary)
+            TainaField(
+                label: "Gigabytes",
+                text: $text,
+                keyboard: .numberPad,
+                placeholder: "250",
+                help: help
+            )
+            if let warning {
+                Text(warning)
+                    .typeStyle(Theme.Text.caption)
+                    .foregroundStyle(Theme.Palette.feedbackWarning)
+            }
+            PrimaryButton(title: "Salvar", loading: saving) {
+                Task { await save() }
+            }
+            .disabled(!valid || saving)
+            SecondaryButton(title: "Cancelar") { dismiss() }
+        }
+        .padding(Theme.Space.space5)
+        .presentationDetents([.medium])
+        .task {
+            if text.isEmpty {
+                text = String(StorageModel.gigabytes(model.stats?.quotaBytes))
+            }
+        }
+    }
+
+    private var gigabytes: Int64? {
+        guard let parsed = Int64(text.trimmingCharacters(in: .whitespaces)), parsed >= 1 else {
+            return nil
+        }
+        return parsed
+    }
+
+    private var valid: Bool {
+        gigabytes != nil
+    }
+
+    private var warning: String? {
+        guard let gigabytes, let used = model.stats?.usedBytes else { return nil }
+        let bytes = StorageModel.bytes(fromGigabytes: gigabytes)
+        return bytes < used ? "Este limite é menor do que já está guardado. Nada é apagado; a caixa só não aceita mais nada até o limite subir." : nil
+    }
+
+    private var help: String {
+        "Por exemplo: 250"
+    }
+
+    private func save() async {
+        guard let gigabytes else { return }
+        saving = true
+        defer { saving = false }
+        let result = await model.setQuota(bytes: StorageModel.bytes(fromGigabytes: gigabytes))
+        switch result {
+        case .success:
+            dismiss()
+        case .failure:
+            break
+        }
+        outcome(result)
     }
 }
 

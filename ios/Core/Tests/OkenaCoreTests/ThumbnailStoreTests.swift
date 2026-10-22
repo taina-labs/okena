@@ -41,6 +41,19 @@ private struct StubAPI: TainaAPI {
     func myRequests() async -> TainaResult<Page<Pedido>> { .failure(.cancelled) }
     func approveRequest(id: String) async -> TainaResult<Concessao> { .failure(.cancelled) }
     func denyRequest(id: String) async -> TainaResult<Pedido> { .failure(.cancelled) }
+    func manifest(after: String?, limit: Int?) async -> TainaResult<Page<File>> { .failure(.cancelled) }
+    func batch(op: BatchOp, ids: [String], folderRkey: String?) async -> TainaResult<[BatchOutcome]> { .failure(.cancelled) }
+    func grants(role: GrantRole) async -> TainaResult<Page<Concessao>> { .failure(.cancelled) }
+    func revokeGrant(id: String) async -> TainaResult<Void> { .failure(.cancelled) }
+    func inviteMember(papel: Papel) async -> TainaResult<MemberInvite> { .failure(.cancelled) }
+    func updateMember(id: String, papel: Papel) async -> TainaResult<Ava> { .failure(.cancelled) }
+    func deactivateMember(id: String) async -> TainaResult<Void> { .failure(.cancelled) }
+    func reactivateMember(id: String) async -> TainaResult<Ava> { .failure(.cancelled) }
+    func revokeInvite(id: String) async -> TainaResult<Void> { .failure(.cancelled) }
+    func memberResetLink(id: String) async -> TainaResult<ResetLink> { .failure(.cancelled) }
+    func setQuota(bytes: Int64) async -> TainaResult<Tekoa> { .failure(.cancelled) }
+    func triggerBackup() async -> TainaResult<Void> { .failure(.cancelled) }
+    func updatePassword(current: String, new: String) async -> TainaResult<Void> { .failure(.cancelled) }
     func mural(limit: Int?, cursor: String?) async -> TainaResult<Page<MuralEntry>> { .failure(.cancelled) }
     func storage() async -> TainaResult<StorageStats> { .failure(.cancelled) }
     func saude() async -> TainaResult<Saude> { .failure(.cancelled) }

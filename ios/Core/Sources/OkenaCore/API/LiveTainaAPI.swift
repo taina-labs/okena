@@ -7,6 +7,7 @@ public struct LiveTainaAPI: TainaAPI {
     private let transport: Transport
     private let host: HostStore
     private let session: SessionStore
+    private let conditional: ConditionalStore
 
     public init(
         transport: Transport = URLSessionTransport(),
@@ -16,6 +17,7 @@ public struct LiveTainaAPI: TainaAPI {
         self.transport = transport
         self.host = host
         self.session = session
+        self.conditional = ConditionalStore()
     }
 
     public func instance() async -> TainaResult<Instance> {
@@ -210,17 +212,17 @@ public struct LiveTainaAPI: TainaAPI {
     }
 
     public func folderContents(folderRkey: String?, limit: Int?, cursor: String?, sort: Sort?) async -> TainaResult<FolderContents> {
-        let query: [String: String?] = [
-            "folder": folderRkey,
-            "limit": limit.map(String.init),
-            "cursor": cursor,
-            "sort": sort?.wire,
-        ]
-        return await prepared(path: "contents", query: query, authenticated: true).then { request in
-            await self.transport.send(request).then { http in
-                self.respond(http, FolderContents.self, label: "contents")
-            }
-        }
+        await conditionalGet(
+            path: "contents",
+            query: [
+                "folder": folderRkey,
+                "limit": limit.map(String.init),
+                "cursor": cursor,
+                "sort": sort?.wire,
+            ],
+            type: FolderContents.self,
+            label: "contents"
+        )
     }
 
     public func upload(fileAt fileURL: URL, name: String, mime: String, folderRkey: String?) async -> TainaResult<File> {
@@ -301,12 +303,12 @@ public struct LiveTainaAPI: TainaAPI {
     }
 
     public func recent(limit: Int?) async -> TainaResult<Page<File>> {
-        let query: [String: String?] = ["limit": limit.map(String.init)]
-        return await prepared(path: "recent", query: query, authenticated: true).then { request in
-            await self.transport.send(request).then { http in
-                self.respond(http, Page<File>.self, label: "recent")
-            }
-        }
+        await conditionalGet(
+            path: "recent",
+            query: ["limit": limit.map(String.init)],
+            type: Page<File>.self,
+            label: "recent"
+        )
     }
 
     public func download(rkey: String) async -> TainaResult<URL> {
@@ -334,15 +336,15 @@ public struct LiveTainaAPI: TainaAPI {
     }
 
     public func trash(limit: Int?, cursor: String?) async -> TainaResult<Page<File>> {
-        let query: [String: String?] = [
-            "limit": limit.map(String.init),
-            "cursor": cursor,
-        ]
-        return await prepared(path: "trash", query: query, authenticated: true).then { request in
-            await self.transport.send(request).then { http in
-                self.respond(http, Page<File>.self, label: "trash")
-            }
-        }
+        await conditionalGet(
+            path: "trash",
+            query: [
+                "limit": limit.map(String.init),
+                "cursor": cursor,
+            ],
+            type: Page<File>.self,
+            label: "trash"
+        )
     }
 
     public func restoreFile(rkey: String) async -> TainaResult<File> {
@@ -354,27 +356,64 @@ public struct LiveTainaAPI: TainaAPI {
     }
 
     public func photos(limit: Int?, cursor: String?) async -> TainaResult<Page<File>> {
-        let query: [String: String?] = [
-            "limit": limit.map(String.init),
-            "cursor": cursor,
-        ]
-        return await prepared(path: "photos", query: query, authenticated: true).then { request in
-            await self.transport.send(request).then { http in
-                self.respond(http, Page<File>.self, label: "photos")
-            }
-        }
+        await conditionalGet(
+            path: "photos",
+            query: [
+                "limit": limit.map(String.init),
+                "cursor": cursor,
+            ],
+            type: Page<File>.self,
+            label: "photos"
+        )
     }
 
     public func photoTimeline(limit: Int?, cursor: String?) async -> TainaResult<Page<TimelineGroup>> {
-        let query: [String: String?] = [
-            "limit": limit.map(String.init),
-            "cursor": cursor,
-        ]
-        return await prepared(path: "photos/timeline", query: query, authenticated: true).then { request in
-            await self.transport.send(request).then { http in
-                self.respond(http, Page<TimelineGroup>.self, label: "timeline")
-            }
+        await conditionalGet(
+            path: "photos/timeline",
+            query: [
+                "limit": limit.map(String.init),
+                "cursor": cursor,
+            ],
+            type: Page<TimelineGroup>.self,
+            label: "timeline"
+        )
+    }
+
+    public func manifest(after: String?, limit: Int?) async -> TainaResult<Page<File>> {
+        await conditionalGet(
+            path: "files/manifest",
+            query: [
+                "after": after,
+                "limit": limit.map(String.init),
+            ],
+            type: Page<File>.self,
+            label: "manifest"
+        )
+    }
+
+    public func batch(op: BatchOp, ids: [String], folderRkey: String?) async -> TainaResult<[BatchOutcome]> {
+        struct Call: Encodable {
+            let op: BatchOp
+            let ids: [String]
+            let folder: String?
         }
+
+        guard let body = try? APICoding.encoder.encode(Call(op: op, ids: ids, folder: folderRkey)) else {
+            return .failure(.invalidResponse("batch body"))
+        }
+        return await prepared(path: "files/batch", method: "POST", body: body, contentType: "application/json", authenticated: true)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    await self.respond(http, BatchAnswer.self, label: "batch").then { answer in
+                        .success(answer.results)
+                    }
+                }
+            }
+    }
+
+    /// The batch envelope, so the client sees only the list.
+    private struct BatchAnswer: Decodable {
+        let results: [BatchOutcome]
     }
 
     public func accessTarget(fileRkey: String) async -> TainaResult<AccessTarget> {
@@ -431,6 +470,133 @@ public struct LiveTainaAPI: TainaAPI {
                 self.respond(http, Pedido.self, label: "pedido")
             }
         }
+    }
+
+    public func grants(role: GrantRole) async -> TainaResult<Page<Concessao>> {
+        await conditionalGet(
+            path: "grants",
+            query: ["role": role.rawValue],
+            type: Page<Concessao>.self,
+            label: "grants"
+        )
+    }
+
+    public func revokeGrant(id: String) async -> TainaResult<Void> {
+        await prepared(path: "grants/\(id)", method: "DELETE", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respondEmpty(http)
+            }
+        }
+    }
+
+    public func inviteMember(papel: Papel) async -> TainaResult<MemberInvite> {
+        struct Call: Encodable {
+            let papel: Papel
+        }
+
+        guard let body = try? APICoding.encoder.encode(Call(papel: papel)) else {
+            return .failure(.invalidResponse("member invite body"))
+        }
+        return await prepared(path: "members", method: "POST", body: body, contentType: "application/json", authenticated: true)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respond(http, MemberInvite.self, label: "member invite")
+                }
+            }
+    }
+
+    public func updateMember(id: String, papel: Papel) async -> TainaResult<Ava> {
+        struct Call: Encodable {
+            let papel: Papel
+        }
+
+        guard let body = try? APICoding.encoder.encode(Call(papel: papel)) else {
+            return .failure(.invalidResponse("member patch body"))
+        }
+        return await prepared(path: "members/\(id)", method: "PATCH", body: body, contentType: "application/json", authenticated: true)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respond(http, Ava.self, label: "member")
+                }
+            }
+    }
+
+    public func deactivateMember(id: String) async -> TainaResult<Void> {
+        await prepared(path: "members/\(id)", method: "DELETE", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respondEmpty(http)
+            }
+        }
+    }
+
+    public func reactivateMember(id: String) async -> TainaResult<Ava> {
+        await prepared(path: "members/\(id)/reactivate", method: "POST", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, Ava.self, label: "member")
+            }
+        }
+    }
+
+    public func revokeInvite(id: String) async -> TainaResult<Void> {
+        await prepared(path: "members/\(id)/invite", method: "DELETE", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respondEmpty(http)
+            }
+        }
+    }
+
+    public func memberResetLink(id: String) async -> TainaResult<ResetLink> {
+        await prepared(path: "members/\(id)/reset-link", method: "POST", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respond(http, ResetLink.self, label: "reset link")
+            }
+        }
+    }
+
+    public func setQuota(bytes: Int64) async -> TainaResult<Tekoa> {
+        struct Call: Encodable {
+            let quotaBytes: Int64
+        }
+
+        guard let body = try? APICoding.encoder.encode(Call(quotaBytes: bytes)) else {
+            return .failure(.invalidResponse("quota body"))
+        }
+        return await prepared(path: "storage/quota", method: "PATCH", body: body, contentType: "application/json", authenticated: true)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respond(http, Tekoa.self, label: "quota")
+                }
+            }
+    }
+
+    public func triggerBackup() async -> TainaResult<Void> {
+        await prepared(path: "saude/backup", method: "POST", authenticated: true).then { request in
+            await self.transport.send(request).then { http in
+                self.respondEmpty(http)
+            }
+        }
+    }
+
+    /// The self-service change, while signed in: the box checks the
+    /// current password, keeps the calling device's session and revokes
+    /// every other one, so a stolen password does not keep the old doors
+    /// open. A wrong current answers 403 `invalid_credentials`, not the
+    /// 401 of a dead session.
+    public func updatePassword(current: String, new: String) async -> TainaResult<Void> {
+        struct Call: Encodable {
+            let currentPassword: String
+            let newPassword: String
+        }
+
+        guard let body = try? APICoding.encoder.encode(Call(currentPassword: current, newPassword: new)) else {
+            return .failure(.invalidResponse("password change body"))
+        }
+        return await prepared(path: "session/password", method: "POST", body: body, contentType: "application/json", authenticated: true)
+            .then { request in
+                await self.transport.send(request).then { http in
+                    self.respondEmpty(http)
+                }
+            }
     }
 
     public func mural(limit: Int?, cursor: String?) async -> TainaResult<Page<MuralEntry>> {
@@ -573,6 +739,46 @@ public struct LiveTainaAPI: TainaAPI {
         return .success(())
     }
 
+    /// The collection reads (manifest, contents, photos, timeline, recent,
+    /// trash, grants): sends the stored `If-None-Match` when the box
+    /// tagged the last answer, and keeps every new tag with its body. A
+    /// 304 carries no body, so the one kept before is decoded again and
+    /// the caller receives a full page either way.
+    private func conditionalGet<Value: Decodable>(
+        path: String,
+        query: [String: String?],
+        type: Value.Type,
+        label: String
+    ) async -> TainaResult<Value> {
+        let built = await prepared(path: path, query: query, authenticated: true)
+        return await built.then { request in
+            var request = request
+            let key = Self.cacheKey(request.url, token: await self.session.token())
+            if let tag = await self.conditional.tag(for: key) {
+                request.setValue(tag, forHTTPHeaderField: "If-None-Match")
+            }
+            return await self.transport.send(request).then { http in
+                if http.status == 304 {
+                    guard let cached = await self.conditional.body(for: key) else {
+                        return .failure(.invalidResponse(label))
+                    }
+                    return APICoding.decoder.decode(Value.self, from: cached, label: label)
+                }
+                guard http.isSuccess else {
+                    return .failure(Self.apiFailure(http))
+                }
+                await self.conditional.keep(tag: http.header("ETag"), body: http.data, for: key)
+                return APICoding.decoder.decode(Value.self, from: http.data, label: label)
+            }
+        }
+    }
+
+    /// The cache key of a conditional read: the request, with its query,
+    /// plus the session the etag belongs to.
+    static func cacheKey(_ url: URL?, token: String?) -> String {
+        (url?.absoluteString ?? "") + "|" + (token ?? "")
+    }
+
     /// Decodes the error envelope; when the body is not the envelope (an
     /// HTML error page, an empty body), the fallback is `internal_error` and
     /// the body never reaches the message.
@@ -661,20 +867,50 @@ public struct LiveTainaAPI: TainaAPI {
         }
     }
 
-    /// The `filename=` parameter of a Content-Disposition header, or nil.
+    /// The `filename` of a Content-Disposition header. The extended
+    /// `filename*=` form (RFC 5987) wins when it parses: the plain
+    /// parameter cannot carry an accent without corrupting the name, and
+    /// the box sends both forms on purpose.
     static func attachmentFilename(in http: HTTPResponse) -> String? {
         guard let disposition = http.header("Content-Disposition") else {
             return nil
         }
+        var plain: String?
         for piece in disposition.split(separator: ";") {
             let trimmed = piece.trimmingCharacters(in: .whitespaces)
-            if trimmed.lowercased().hasPrefix("filename=") {
+            if trimmed.lowercased().hasPrefix("filename*=") {
+                if let extended = Self.extendedValue(String(trimmed.dropFirst("filename*=".count))) {
+                    return extended
+                }
+            } else if trimmed.lowercased().hasPrefix("filename="), plain == nil {
                 let value = String(trimmed.dropFirst("filename=".count))
                     .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-                return value.isEmpty ? nil : value
+                if !value.isEmpty {
+                    plain = value
+                }
             }
         }
-        return nil
+        return plain
+    }
+
+    /// Decodes an RFC 5987 ext-value: `charset'language'percent-encoded`,
+    /// usually `UTF-8''Fotografia%20da%20pra%C3%A7a.jpg`. Only UTF-8 is
+    /// spoken here; another charset returns nil, so the plain parameter
+    /// answers instead.
+    static func extendedValue(_ raw: String) -> String? {
+        let parts = raw.split(separator: "'", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3 else {
+            return nil
+        }
+        let charset = parts[0].lowercased()
+        guard charset == "utf-8" || charset == "utf8" else {
+            return nil
+        }
+        let decoded = String(parts[2]).removingPercentEncoding
+        guard let decoded, !decoded.isEmpty else {
+            return nil
+        }
+        return decoded
     }
 
     /// Path separators are the ones that make a filename walk the tree.
