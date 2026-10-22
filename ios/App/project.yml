@@ -1,0 +1,88 @@
+name: Okena
+
+options:
+  bundleIdPrefix: io.taina
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  OkenaCore:
+    path: ../Core
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+targets:
+  Okena:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/Okena
+      # The three variable faces and their OFL licenses. Same axis (wght)
+      # as the web, which self-hosts the variable woff2 of the same families.
+      - path: Resources/Fonts
+        buildPhase: resources
+      # The app icon, authored in Icon Composer (Xcode 27). Xcode compiles it
+      # into Assets.car and writes CFBundleIconName from the build setting
+      # below; for the iOS 18 deployment target it also renders the legacy
+      # PNG sizes from the same file, so there is no asset catalog.
+      - path: Resources/AppIcon.icon
+        type: file
+        buildPhase: resources
+    dependencies:
+      - package: OkenaCore
+    info:
+      path: Sources/Okena/Info.plist
+      properties:
+        CFBundleDisplayName: "Tainá"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        # The box builds the deep links of the invite and the password reset
+        # (taina://convite/:token and taina://redefinir/:token, with the box
+        # address in the `host` query param). The scheme is registered here
+        # so the link opens the app, which resolves it natively, without a
+        # browser (SessionModel.handleDeepLink).
+        CFBundleURLTypes:
+          - CFBundleURLName: io.taina.app
+            CFBundleURLSchemes:
+              - taina
+        # The app follows the system appearance. tokens.css is one palette:
+        # the night default, with the light block derived from it under the
+        # same token names, and each semantic color carries both values.
+        UIUserInterfaceStyle: Automatic
+        # The box address is typed by the person on the first screen, so the
+        # app cannot know at build time whether it answers over TLS. A scoped
+        # exception cannot cover a host that is not known until runtime, and
+        # a name such as taina.yby is not "local" to ATS either. Cleartext is
+        # allowed and stated out loud instead (InstanceAddress.isCleartext).
+        # App Store review wants this reason in the review notes.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UIAppFonts:
+          - BricolageGrotesque-Variable.ttf
+          - SchibstedGrotesk-Variable.ttf
+          - JetBrainsMono-Variable.ttf
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.taina.app
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+
+schemes:
+  Okena:
+    build:
+      targets:
+        Okena: all
+    run:
+      config: Debug

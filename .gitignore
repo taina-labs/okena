@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+.swiftpm/
+.derived/
+DerivedData/
+*.xcodeproj
+xcuserdata/
+*.xcworkspace
+ios/App/Sources/Okena/Info.plist
