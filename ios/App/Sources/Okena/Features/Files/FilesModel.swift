@@ -308,10 +308,10 @@ final class FilesModel {
         "Excluir a pasta \"\(name)\"?"
     }
 
-    /// The folder goes to the trash with everything inside, but only the
-    /// files come back, one by one: the copy does not promise what the
-    /// system does not do.
-    static let deleteFolderMessage = "A pasta e o que tem dentro vão para a lixeira. Os arquivos voltam um a um; a pasta em si, não."
+    /// The folder goes to the trash with everything inside and comes back
+    /// as a unit (the box restores the subtree), the same promise the web
+    /// makes.
+    static let deleteFolderMessage = "A pasta e o que tem dentro vão para a lixeira. A pasta volta com tudo o que tem dentro."
 
     /// The default motivo of a pedido made from the file screen, the same
     /// sentence the web sends.
