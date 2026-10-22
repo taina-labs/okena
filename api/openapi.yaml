@@ -1239,6 +1239,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/v1/grants:
+    get:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Concessões
+      description: |
+        As concessões de leitura no espelho: as que eu concedi (`role=owner`,
+        o padrão) ou as que recebi (`role=reader`), revogadas incluídas.
+        Paginada como as outras listas: `limit` e `after` (o cursor opaco da
+        página anterior), com `next_cursor` real na resposta.
+      parameters:
+        - name: role
+          in: query
+          description: A ponta do espelho. Qualquer outro valor cai em `owner`.
+          schema:
+            type: string
+            enum: [owner, reader]
+            default: owner
+        - $ref: "#/components/parameters/Limit"
+        - name: after
+          in: query
+          description: O `next_cursor` da página anterior (opaco).
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/ConcessaoPage"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v1/mural:
     get:
       tags: [Pedidos de acesso, mural, armazenamento, saúde]
@@ -1505,6 +1539,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/PedidoPage"
+    ConcessaoPage:
+      description: Página de concessões.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ConcessaoPage"
 
   schemas:
     # --- Components do kernel (espelho de ypy/api/openapi.components.yaml) ---
@@ -2038,6 +2078,15 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/Pedido"
+    ConcessaoPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Concessao"
     MuralEntryPage:
       allOf:
         - $ref: "#/components/schemas/Page"
