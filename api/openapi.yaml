@@ -1673,6 +1673,12 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/Rkey"
+        dono:
+          type: string
+          description: |
+            O public_id da pessoa dona, resolvido em TODA rota que devolve
+            arquivo. Nulo quando o dono nao existe mais.
+          nullable: true
         taken_at:
           type: string
           format: date-time
@@ -1724,6 +1730,12 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/Rkey"
+        dono:
+          type: string
+          description: |
+            O public_id da pessoa dona, resolvido em TODA rota que devolve
+            pasta. Nulo quando o dono nao existe mais.
+          nullable: true
         deleted_at:
           type: string
           format: date-time
