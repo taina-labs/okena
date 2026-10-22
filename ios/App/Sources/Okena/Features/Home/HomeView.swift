@@ -3,10 +3,12 @@ import SwiftUI
 
 /// The home: the greeting and the community's name, the storage card, the
 /// recent uploads and two teasers (the mural and the access requests),
-/// mirroring the web's `home_live`. The rows are read-only for now: the
-/// navigation lands later.
+/// mirroring the web's `home_live`. The rows go somewhere: a recent file
+/// opens its detail here, a mural line opens the mural, and the requests
+/// card opens Pedidos under Mais.
 struct HomeView: View {
     @Environment(SessionModel.self) private var session
+    @Environment(ShellModel.self) private var shell
     @State private var model: HomeModel?
 
     var body: some View {
@@ -91,7 +93,12 @@ struct HomeView: View {
             } else {
                 VStack(spacing: Theme.Space.space2) {
                     ForEach(model.recent, id: \.rkey) { file in
-                        RecentRow(file: file)
+                        NavigationLink {
+                            FileDetailView(file: file)
+                        } label: {
+                            RecentRow(file: file)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -110,7 +117,12 @@ struct HomeView: View {
             section("Mural") {
                 VStack(spacing: Theme.Space.space2) {
                     ForEach(model.mural) { line in
-                        MuralTeaserRow(line: line)
+                        Button {
+                            shell.open(.mural)
+                        } label: {
+                            MuralTeaserRow(line: line)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -183,23 +195,32 @@ struct HomeView: View {
     }
 
     private func requestsCard(_ count: Int) -> some View {
-        RowCard {
-            HStack(spacing: Theme.Space.space3) {
-                Image(systemName: "tray.full")
-                    .typeStyle(Theme.Text.h3)
-                    .foregroundStyle(Theme.Palette.serviceMaraca)
-                    .frame(width: Theme.Space.space10, height: Theme.Space.space10)
-                    .background(Theme.Palette.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.Radius.md))
-                VStack(alignment: .leading, spacing: Theme.Space.space1) {
-                    Text("Pedidos de acesso")
-                        .typeStyle(Theme.Text.label)
-                        .foregroundStyle(Theme.Palette.textPrimary)
-                    Text(HomeModel.pendingLabel(count))
+        Button {
+            shell.open(.pedidos)
+        } label: {
+            RowCard {
+                HStack(spacing: Theme.Space.space3) {
+                    Image(systemName: "tray.full")
+                        .typeStyle(Theme.Text.h3)
+                        .foregroundStyle(Theme.Palette.serviceMaraca)
+                        .frame(width: Theme.Space.space10, height: Theme.Space.space10)
+                        .background(Theme.Palette.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.Radius.md))
+                    VStack(alignment: .leading, spacing: Theme.Space.space1) {
+                        Text("Pedidos de acesso")
+                            .typeStyle(Theme.Text.label)
+                            .foregroundStyle(Theme.Palette.textPrimary)
+                        Text(HomeModel.pendingLabel(count))
+                            .typeStyle(Theme.Text.caption)
+                            .foregroundStyle(Theme.Palette.textMuted)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
                         .typeStyle(Theme.Text.caption)
-                        .foregroundStyle(Theme.Palette.textMuted)
+                        .foregroundStyle(Theme.Palette.textFaint)
                 }
             }
         }
+        .buttonStyle(.plain)
     }
 
     /// The calm card that takes the place of a section the box did not
@@ -253,7 +274,8 @@ struct FileGlyph: View {
 }
 
 /// The recent row: the kind glyph, the name, and the meta line that ends
-/// in the zone in words ("Imagem, 2,4 MB, ontem, na praça").
+/// in the zone in words ("Imagem, 2,4 MB, ontem, na praça"), with the
+/// chevron that says it opens.
 struct RecentRow: View {
     let file: File
 
@@ -274,24 +296,34 @@ struct RecentRow: View {
                         .multilineTextAlignment(.leading)
                 }
                 Spacer()
+                Image(systemName: "chevron.right")
+                    .typeStyle(Theme.Text.caption)
+                    .foregroundStyle(Theme.Palette.textFaint)
             }
         }
     }
 }
 
-/// One mural teaser line: the sentence and when it happened.
+/// One mural teaser line: the sentence and when it happened, with the
+/// chevron that says it opens (the mural itself).
 private struct MuralTeaserRow: View {
     let line: HomeModel.MuralLine
 
     var body: some View {
         RowCard {
-            VStack(alignment: .leading, spacing: Theme.Space.space2) {
-                Text(line.sentence)
-                    .typeStyle(Theme.Text.bodySm)
-                    .foregroundStyle(Theme.Palette.textPrimary)
-                Text(line.ago)
+            HStack(spacing: Theme.Space.space3) {
+                VStack(alignment: .leading, spacing: Theme.Space.space2) {
+                    Text(line.sentence)
+                        .typeStyle(Theme.Text.bodySm)
+                        .foregroundStyle(Theme.Palette.textPrimary)
+                    Text(line.ago)
+                        .typeStyle(Theme.Text.caption)
+                        .foregroundStyle(Theme.Palette.textMuted)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
                     .typeStyle(Theme.Text.caption)
-                    .foregroundStyle(Theme.Palette.textMuted)
+                    .foregroundStyle(Theme.Palette.textFaint)
             }
         }
     }
@@ -302,6 +334,7 @@ private struct MuralTeaserRow: View {
     PreviewHost(make: { await SessionModel.previewSignedIn() }) { session in
         HomeView()
             .environment(session)
+            .environment(ShellModel())
     }
 }
 #endif
