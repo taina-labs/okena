@@ -77,6 +77,7 @@ public struct File: Decodable, Sendable, Equatable {
     public let size: Int64
     public let zona: Zona
     public let folder: String?
+    public let dono: String?
     public let takenAt: String?
     public let width: Int?
     public let height: Int?
@@ -93,6 +94,7 @@ public struct Folder: Codable, Sendable, Equatable {
     public let name: String
     public let zona: Zona
     public let folder: String?
+    public let dono: String?
     public let deletedAt: String?
     public let createdAt: String
     public let updatedAt: String

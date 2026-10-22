@@ -188,15 +188,21 @@ final class FilesModel {
         file.zona == .casa && uploadedRkeys.contains(file.rkey)
     }
 
-    /// The destinations a move may offer: never the source itself, and,
-    /// when the source is a folder, none of its descendants, where the
-    /// move would close a cycle the box refuses. Pure over the readable
-    /// list, walking each candidate's chain of parents. What the record
-    /// cannot say is ownership: the wire carries no owner, so folders of
-    /// other people still show and the box has the last word (the web
-    /// filters to the person's own folders; the app cannot see the owner).
-    static func moveDestinations(from sourceRkey: String, isFolder: Bool, among folders: [Folder]) -> [Folder] {
-        let others = folders.filter { $0.rkey != sourceRkey }
+    /// The destinations a move may offer: only the folders the person
+    /// owns (the wire's `dono`), never the source itself, and, when the
+    /// source is a folder, none of its descendants, where the move would
+    /// close a cycle the box refuses. Pure over the readable list,
+    /// walking each candidate's chain of parents through every folder,
+    /// owned or not: the cycle the box refuses does not care who owns
+    /// the intermediate. The box keeps the last word.
+    static func moveDestinations(
+        from sourceRkey: String,
+        isFolder: Bool,
+        among folders: [Folder],
+        ownedBy ownerPublicId: String?
+    ) -> [Folder] {
+        let owned = folders.filter { $0.dono == ownerPublicId }
+        let others = owned.filter { $0.rkey != sourceRkey }
         guard isFolder else {
             return others
         }

@@ -16,7 +16,7 @@ private let estatutoRkey = "3m2a8twqpv5z2"
     #expect(session.tekoa.name == "Tekoa Sapukai")
 
     let contents = try #require(await fake.folderContents(folderRkey: nil, limit: nil, cursor: nil, sort: nil).value)
-    #expect(contents.folders.map(\.name) == ["Documentos da assembleia", "Fotos da festa"])
+    #expect(contents.folders.map(\.name) == ["Documentos da assembleia", "Fotos da festa", "Gincana da quadra"])
     #expect(contents.items.count == 2)
 
     let me = try #require(await fake.me().value)
