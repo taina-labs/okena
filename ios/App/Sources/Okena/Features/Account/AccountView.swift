@@ -1,11 +1,12 @@
 import OkenaCore
 import SwiftUI
 
-/// The account: who is acting, which devices, which community, and the way
-/// out. Signing out is a DELETE /session, so the dialog says the aparelho
-/// loses access. The devices are the account's own: each aparelho that is
-/// not this one can be revoked, with a confirmation and the box's word on
-/// failure.
+/// The account: who is acting, which devices, which community, and the
+/// way out. Signing out is a DELETE /session, so the dialog says the
+/// aparelho loses access. The password is self-service: the box keeps
+/// this aparelho signed in and revokes the others. The devices are the
+/// account's own: each aparelho that is not this one can be revoked,
+/// with a confirmation and the box's word on failure.
 struct AccountView: View {
     @Environment(SessionModel.self) private var session
 
@@ -16,6 +17,13 @@ struct AccountView: View {
     @State private var confirmingRevoke: DeviceToken?
     @State private var revoking = false
     @State private var failure: TainaError?
+    @State private var currentPassword = ""
+    @State private var newPassword = ""
+    @State private var confirmation = ""
+    @State private var mismatch: String?
+    @State private var changing = false
+    @State private var changed = false
+    @State private var passwordFailure: TainaError?
 
     var body: some View {
         Group {
@@ -86,6 +94,9 @@ struct AccountView: View {
                                 .foregroundStyle(Theme.Palette.textSecondary)
                         }
                     }
+                }
+                section("Senha") {
+                    passwordForm
                 }
                 section("Aparelhos") {
                     devicesSection(current: me.device)
@@ -166,6 +177,52 @@ struct AccountView: View {
         }
     }
 
+    /// The self-service password change: the current one proves who is
+    /// asking, the two new ones are the app's own check, and the box's
+    /// answer lands as field messages or the success line.
+    private var passwordForm: some View {
+        RowCard {
+            VStack(alignment: .leading, spacing: Theme.Space.space3) {
+                TainaField(
+                    label: "Senha atual",
+                    text: $currentPassword,
+                    secure: true,
+                    errorMessages: passwordFailure?.messages(for: ["current_password"]) ?? [],
+                    contentType: .password
+                )
+                TainaField(
+                    label: "Senha nova",
+                    text: $newPassword,
+                    secure: true,
+                    errorMessages: passwordFailure?.messages(for: ["new_password", "password"]) ?? [],
+                    contentType: .newPassword,
+                    placeholder: "mínimo 8 caracteres"
+                )
+                TainaField(
+                    label: "Confirme a senha nova",
+                    text: $confirmation,
+                    secure: true,
+                    errorMessages: mismatch.map { [$0] } ?? [],
+                    contentType: .newPassword,
+                    placeholder: "a mesma senha"
+                )
+                if let passwordFailure {
+                    Text(passwordFailure.errorDescription ?? "Algo deu errado. Tente de novo.")
+                        .typeStyle(Theme.Text.bodySm)
+                        .foregroundStyle(Theme.Palette.feedbackError)
+                }
+                if changed {
+                    Text("Senha trocada. Nos outros aparelhos, é preciso entrar de novo com a senha nova.")
+                        .typeStyle(Theme.Text.bodySm)
+                        .foregroundStyle(Theme.Palette.feedbackSuccess)
+                }
+                PrimaryButton(title: "Trocar minha senha", loading: changing) {
+                    Task { await changePassword() }
+                }
+            }
+        }
+    }
+
     private func deviceRow(_ device: DeviceToken, current: DeviceToken?) -> some View {
         RowCard {
             VStack(alignment: .leading, spacing: Theme.Space.space2) {
@@ -185,10 +242,20 @@ struct AccountView: View {
                     .typeStyle(Theme.Text.monoSm)
                     .foregroundStyle(device.revokedAt == nil ? Theme.Palette.textSecondary : Theme.Palette.textMuted)
                 if device.publicId == current?.publicId {
-                    Text(device.publicId)
-                        .typeStyle(Theme.Text.monoSm)
-                        .foregroundStyle(Theme.Palette.textMuted)
-                        .textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: Theme.Space.space1) {
+                        Text("Identificação deste aparelho")
+                            .typeStyle(Theme.Text.caption)
+                            .foregroundStyle(Theme.Palette.textMuted)
+                        Text(device.publicId)
+                            .typeStyle(Theme.Text.monoSm)
+                            .foregroundStyle(Theme.Palette.textMuted)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                        Text("É assim que a comunidade distingue este aparelho dos outros.")
+                            .typeStyle(Theme.Text.caption)
+                            .foregroundStyle(Theme.Palette.textMuted)
+                    }
                 }
                 if device.revokedAt == nil, device.publicId != current?.publicId {
                     SecondaryButton(
@@ -251,6 +318,35 @@ struct AccountView: View {
             failure = error
         }
         revoking = false
+    }
+
+    private func changePassword() async {
+        passwordFailure = nil
+        guard Self.confirmationMatches(password: newPassword, confirmation: confirmation) else {
+            mismatch = "As duas senhas não são iguais."
+            return
+        }
+        mismatch = nil
+        changing = true
+        let result = await session.updatePassword(current: currentPassword, new: newPassword)
+        switch await session.screen(result) {
+        case .success:
+            changed = true
+            currentPassword = ""
+            newPassword = ""
+            confirmation = ""
+            // The other aparelhos were revoked on the box: the list says so.
+            await loadDevices()
+        case .failure(let error):
+            passwordFailure = error
+        }
+        changing = false
+    }
+
+    /// The local rule the wire does not carry: the two passwords must
+    /// match. Pure, so every screen says it the same way.
+    private static func confirmationMatches(password: String, confirmation: String) -> Bool {
+        password == confirmation
     }
 
     private func leave() async {

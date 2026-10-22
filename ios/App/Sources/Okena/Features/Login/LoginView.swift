@@ -3,7 +3,9 @@ import SwiftUI
 import UIKit
 
 /// The sign in: username, password, device name, and the community the
-/// person is entering, always visible at the top.
+/// person is entering, always visible at the top. The invite link pasted
+/// at the bottom goes through the deep-link path, for the person whose
+/// way in is a link, not a password.
 struct LoginView: View {
     @Environment(SessionModel.self) private var session
 
@@ -51,6 +53,7 @@ struct LoginView: View {
                 PrimaryButton(title: "Entrar", loading: signingIn) {
                     Task { await enter() }
                 }
+                InvitePasteField()
             }
             .padding(Theme.Space.space5)
         }

@@ -56,6 +56,41 @@ public struct InstanceAddress: Equatable, Sendable {
         return .success(InstanceAddress(url: url))
     }
 
+    /// What a connect tries, in order: the address as typed, and, when the
+    /// person did not type a scheme, the same host over plain http. The
+    /// pilot box answers http, and a bare address must not dead-end on the
+    /// https the parse assumed.
+    public struct Candidates: Sendable {
+        public let primary: InstanceAddress
+        public let fallback: InstanceAddress?
+    }
+
+    public static func candidates(input: String) -> TainaResult<Candidates> {
+        switch parse(input: input) {
+        case .failure(let error):
+            return .failure(error)
+        case .success(let address):
+            let fallback = schemeWasExplicit(input) ? nil : address.overHTTP()
+            return .success(Candidates(primary: address, fallback: fallback))
+        }
+    }
+
+    /// The same host one scheme down: the second candidate of a connect.
+    /// An address that is already http has nowhere to go.
+    func overHTTP() -> InstanceAddress? {
+        guard url.scheme?.lowercased() == "https" else { return nil }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.scheme = "http"
+        guard let http = components?.url else { return nil }
+        return InstanceAddress(url: http)
+    }
+
+    /// The person typed the scheme themselves; a bare host was completed
+    /// with https by `parse`.
+    private static func schemeWasExplicit(_ input: String) -> Bool {
+        input.trimmingCharacters(in: .whitespacesAndNewlines).contains("://")
+    }
+
     /// The host, for display: "taina.minhacasa.ts.net".
     public var display: String {
         url.host() ?? ""
