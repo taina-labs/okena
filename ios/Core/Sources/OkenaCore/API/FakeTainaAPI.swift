@@ -75,6 +75,10 @@ public actor FakeTainaAPI: TainaAPI {
 
         let assembleia = "3kx2n8pqrv5w2"
         let festa = "3kz9t4mqc1h7d"
+        let gincana = "3kq6v8x2m4p7t"
+        // The ownership the move sheet filters by: the folder the person
+        // owns shows as a destination, Joana's and the one whose owner is
+        // gone do not.
         folders = [
             Folder(
                 rkey: assembleia,
@@ -82,6 +86,7 @@ public actor FakeTainaAPI: TainaAPI {
                 name: "Documentos da assembleia",
                 zona: .casa,
                 folder: nil,
+                dono: ana.publicId,
                 deletedAt: nil,
                 createdAt: "2026-03-10T14:00:00Z",
                 updatedAt: "2026-03-10T14:00:00Z"
@@ -92,9 +97,21 @@ public actor FakeTainaAPI: TainaAPI {
                 name: "Fotos da festa",
                 zona: .praca,
                 folder: nil,
+                dono: joana.publicId,
                 deletedAt: nil,
                 createdAt: "2026-06-21T20:00:00Z",
                 updatedAt: "2026-06-21T20:00:00Z"
+            ),
+            Folder(
+                rkey: gincana,
+                cid: "bmv3k5q7s9u1w3y5a7c9e1g3i5k7m9o1",
+                name: "Gincana da quadra",
+                zona: .casa,
+                folder: nil,
+                dono: nil,
+                deletedAt: nil,
+                createdAt: "2026-07-01T10:00:00Z",
+                updatedAt: "2026-07-01T10:00:00Z"
             ),
         ]
 
@@ -109,6 +126,7 @@ public actor FakeTainaAPI: TainaAPI {
                 size: 48_213,
                 zona: .casa,
                 folder: assembleia,
+                dono: ana.publicId,
                 takenAt: nil,
                 width: nil,
                 height: nil,
@@ -127,6 +145,7 @@ public actor FakeTainaAPI: TainaAPI {
                 size: 12_874,
                 zona: .casa,
                 folder: nil,
+                dono: ana.publicId,
                 takenAt: nil,
                 width: nil,
                 height: nil,
@@ -145,6 +164,7 @@ public actor FakeTainaAPI: TainaAPI {
                 size: 1_204_331,
                 zona: .praca,
                 folder: nil,
+                dono: ana.publicId,
                 takenAt: "2026-06-21T21:12:00Z",
                 width: 4032,
                 height: 3024,
@@ -163,6 +183,7 @@ public actor FakeTainaAPI: TainaAPI {
                 size: 934_221,
                 zona: .praca,
                 folder: festa,
+                dono: ana.publicId,
                 takenAt: nil,
                 width: nil,
                 height: nil,
@@ -181,6 +202,7 @@ public actor FakeTainaAPI: TainaAPI {
                 size: 52_428_800,
                 zona: .praca,
                 folder: festa,
+                dono: ana.publicId,
                 takenAt: nil,
                 width: nil,
                 height: nil,
@@ -486,6 +508,7 @@ public actor FakeTainaAPI: TainaAPI {
             name: name ?? current.name,
             zona: zona ?? current.zona,
             folder: current.folder,
+            dono: current.dono,
             deletedAt: current.deletedAt,
             createdAt: current.createdAt,
             updatedAt: clock()
@@ -517,6 +540,7 @@ public actor FakeTainaAPI: TainaAPI {
             name: current.name,
             zona: current.zona,
             folder: parentRkey,
+            dono: current.dono,
             deletedAt: current.deletedAt,
             createdAt: current.createdAt,
             updatedAt: clock()
@@ -542,6 +566,7 @@ public actor FakeTainaAPI: TainaAPI {
                 name: folder.name,
                 zona: folder.zona,
                 folder: folder.folder,
+                dono: folder.dono,
                 deletedAt: now,
                 createdAt: folder.createdAt,
                 updatedAt: now
@@ -555,7 +580,8 @@ public actor FakeTainaAPI: TainaAPI {
     }
 
     /// Folders are born in the casa; publishing to the praca is a separate
-    /// act, so the fake never creates a praca folder here.
+    /// act, so the fake never creates a praca folder here. The owner is the
+    /// signed in person, like the box stamps.
     public func createFolder(name: String, parentRkey: String?) async -> TainaResult<Folder> {
         await pause()
         guard !name.isEmpty else {
@@ -573,6 +599,7 @@ public actor FakeTainaAPI: TainaAPI {
             name: name,
             zona: .casa,
             folder: parentRkey,
+            dono: session?.me.publicId,
             deletedAt: nil,
             createdAt: now,
             updatedAt: now
@@ -615,6 +642,7 @@ public actor FakeTainaAPI: TainaAPI {
             size: size,
             zona: zona,
             folder: folderRkey,
+            dono: session?.me.publicId,
             takenAt: nil,
             width: nil,
             height: nil,
@@ -654,6 +682,7 @@ public actor FakeTainaAPI: TainaAPI {
             size: current.size,
             zona: zona ?? current.zona,
             folder: current.folder,
+            dono: current.dono,
             takenAt: current.takenAt,
             width: current.width,
             height: current.height,
@@ -1104,6 +1133,7 @@ public actor FakeTainaAPI: TainaAPI {
             size: current.size,
             zona: op == .publish ? .praca : op == .unpublish ? .casa : current.zona,
             folder: op == .move ? folderRkey : current.folder,
+            dono: current.dono,
             takenAt: current.takenAt,
             width: current.width,
             height: current.height,
@@ -1262,6 +1292,7 @@ public actor FakeTainaAPI: TainaAPI {
             size: file.size,
             zona: file.zona,
             folder: file.folder,
+            dono: file.dono,
             takenAt: file.takenAt,
             width: file.width,
             height: file.height,

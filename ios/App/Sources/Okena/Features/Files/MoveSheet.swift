@@ -3,11 +3,10 @@ import SwiftUI
 
 /// The move modal, one for files and folders alike: the root and every
 /// folder, one tap to move. The sheet offers only the destinations the
-/// client can vouch for: never the source itself, and for a folder
-/// source none of its descendants, where the move would close a cycle.
-/// What the record cannot say is ownership: the web filters to the
-/// person's own folders, but the record the app reads carries no owner,
-/// so those still show and the box has the last word.
+/// client can vouch for: the folders the person owns (the wire's `dono`),
+/// never the source itself, and for a folder source none of its
+/// descendants, where the move would close a cycle. The box keeps the
+/// last word.
 struct MoveSheet: View {
     let sourceRkey: String
     let name: String
@@ -77,9 +76,14 @@ struct MoveSheet: View {
     }
 
     /// The folders the sheet offers, the model's filter over what the
-    /// box answered.
+    /// box answered: the person's own folders, minus the cycle traps.
     private var destinations: [Folder] {
-        FilesModel.moveDestinations(from: sourceRkey, isFolder: isFolder, among: folders)
+        FilesModel.moveDestinations(
+            from: sourceRkey,
+            isFolder: isFolder,
+            among: folders,
+            ownedBy: session.currentAvaPublicId
+        )
     }
 
     private func destination(_ folder: Folder?, icon: String, label: String) -> some View {

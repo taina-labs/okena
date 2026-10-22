@@ -93,6 +93,17 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
 
+  OkenaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/OkenaTests
+    dependencies:
+      - target: Okena
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   Okena:
     build:
@@ -100,3 +111,7 @@ schemes:
         Okena: all
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - OkenaTests

@@ -39,6 +39,16 @@ final class SessionModel {
     /// next connect or login.
     private(set) var notice: String?
 
+    /// The signed-in person's public id, from the ready state's identity;
+    /// nil while nobody is signed in. The screens compare it with the
+    /// wire's `dono` to tell what is theirs.
+    var currentAvaPublicId: String? {
+        if case .ready(let me) = state {
+            return me.ava.publicId
+        }
+        return nil
+    }
+
     /// The shared thumbnail cache, keyed by rkey and size.
     let thumbnails: ThumbnailStore
 
