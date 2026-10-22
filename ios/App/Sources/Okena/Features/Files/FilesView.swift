@@ -10,7 +10,7 @@ struct FilesView: View {
     var body: some View {
         Group {
             if let model {
-                BrowserList(model: model)
+                BrowserList(model: model, destinationZona: .casa)
             } else {
                 LoadingView()
             }
@@ -25,9 +25,12 @@ struct FilesView: View {
 }
 
 /// The list the root and any folder show: one loading logic, the model's
-/// pure transitions, no copy between screens.
+/// pure transitions, no copy between screens. The screen names where an
+/// upload lands and the freshly uploaded rows still carry the one-tap
+/// publish to the praca.
 struct BrowserList: View {
     let model: FilesModel
+    let destinationZona: Zona
 
     @State private var showingNewFolder = false
     @State private var newFolderName = ""
@@ -92,7 +95,8 @@ struct BrowserList: View {
         EmptyStateView(
             systemImage: "folder",
             title: "Esta pasta está vazia",
-            message: "Guarde um arquivo com o botão de enviar, no topo da tela, ou crie uma pasta para organizar.",
+            message: "Guarde um arquivo com o botão de enviar, no topo da tela, ou crie uma pasta para organizar. "
+                + FilesModel.uploadDestinationMessage(for: destinationZona),
             action: EmptyStateAction(title: "Nova pasta") {
                 showingNewFolder = true
             }
@@ -102,6 +106,10 @@ struct BrowserList: View {
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: Theme.Space.space2) {
+                Text(FilesModel.uploadDestinationMessage(for: destinationZona))
+                    .typeStyle(Theme.Text.bodySm)
+                    .foregroundStyle(Theme.Palette.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 ForEach(model.entries.folders, id: \.rkey) { folder in
                     NavigationLink {
                         FolderView(folder: folder)
@@ -130,6 +138,12 @@ struct BrowserList: View {
                     }
                     .buttonStyle(.plain)
                 }
+                if !model.entries.files.isEmpty {
+                    Text(FilesModel.countLabel(count: model.entries.files.count, hasMore: model.nextCursor != nil))
+                        .typeStyle(Theme.Text.overline)
+                        .foregroundStyle(Theme.Palette.textMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 ForEach(model.entries.files, id: \.rkey) { file in
                     NavigationLink {
                         FileDetailView(file: file)
@@ -137,9 +151,66 @@ struct BrowserList: View {
                         FileRow(file: file)
                     }
                     .buttonStyle(.plain)
+                    if model.showsPublishAction(file) {
+                        publishAction(for: file)
+                    }
                 }
+                sentinel
             }
             .padding(Theme.Space.space4)
+        }
+    }
+
+    /// The completed upload's action, its own card under the row so the
+    /// tap never shares a surface with the navigation. While the file
+    /// stays in the casa, the action is the way to the praca.
+    private func publishAction(for file: File) -> some View {
+        Button {
+            Task { await publish(file) }
+        } label: {
+            RowCard {
+                HStack(spacing: Theme.Space.space3) {
+                    if model.publishingRkey == file.rkey {
+                        ProgressView()
+                            .tint(Theme.Palette.serviceYbira)
+                    } else {
+                        Image(systemName: "person.2")
+                            .typeStyle(Theme.Text.h3)
+                            .foregroundStyle(Theme.Palette.serviceYbira)
+                    }
+                    Text(FilesModel.zonaActionLabel(for: .casa))
+                        .typeStyle(Theme.Text.label)
+                        .foregroundStyle(Theme.Palette.serviceYbira)
+                    Spacer()
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(model.publishingRkey != nil)
+    }
+
+    /// The next page of files: a spinner that loads on sight, or the
+    /// retry when a page failed. It only exists while the server still
+    /// has rows.
+    @ViewBuilder
+    private var sentinel: some View {
+        if model.nextCursor != nil {
+            if model.moreError {
+                VStack(spacing: Theme.Space.space2) {
+                    Text("Não foi possível carregar mais arquivos.")
+                        .typeStyle(Theme.Text.caption)
+                        .foregroundStyle(Theme.Palette.textMuted)
+                    SecondaryButton(title: "Tentar de novo") {
+                        Task { await model.loadMore() }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                ProgressView()
+                    .tint(Theme.Palette.textMuted)
+                    .frame(maxWidth: .infinity)
+                    .task { await model.loadMore() }
+            }
         }
     }
 
@@ -205,6 +276,13 @@ struct BrowserList: View {
         let result = await model.createFolder(named: name)
         if case .failure(let error) = result {
             alertMessage = error.errorDescription
+        }
+    }
+
+    private func publish(_ file: File) async {
+        let result = await model.publish(file)
+        if case .failure(let error) = result {
+            alertMessage = error.errorDescription ?? "Não foi possível publicar na praça."
         }
     }
 }

@@ -2,14 +2,16 @@ import OkenaCore
 import SwiftUI
 
 /// The move modal, one for files and folders alike: the root and every
-/// folder, one tap to move. The sheet never offers the item itself; a
-/// folder that would close a cycle stays listed, and the box refuses it
-/// with its own sentence. The web filters to the person's own folders;
-/// the record the app reads carries no owner, so the sheet shows the
-/// whole answer and the server has the last word.
+/// folder, one tap to move. The sheet offers only the destinations the
+/// client can vouch for: never the source itself, and for a folder
+/// source none of its descendants, where the move would close a cycle.
+/// What the record cannot say is ownership: the web filters to the
+/// person's own folders, but the record the app reads carries no owner,
+/// so those still show and the box has the last word.
 struct MoveSheet: View {
     let sourceRkey: String
     let name: String
+    var isFolder = false
     let onPick: (Folder?) async -> TainaResult<Void>
 
     @Environment(SessionModel.self) private var session
@@ -64,7 +66,7 @@ struct MoveSheet: View {
                     .foregroundStyle(Theme.Palette.textMuted)
                 LazyVStack(spacing: Theme.Space.space2) {
                     destination(nil, icon: "house", label: "Início (raiz)")
-                    ForEach(folders.filter { $0.rkey != sourceRkey }, id: \.rkey) { folder in
+                    ForEach(destinations, id: \.rkey) { folder in
                         destination(folder, icon: "folder", label: folder.name)
                     }
                 }
@@ -72,6 +74,12 @@ struct MoveSheet: View {
             .padding(Theme.Space.space4)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// The folders the sheet offers, the model's filter over what the
+    /// box answered.
+    private var destinations: [Folder] {
+        FilesModel.moveDestinations(from: sourceRkey, isFolder: isFolder, among: folders)
     }
 
     private func destination(_ folder: Folder?, icon: String, label: String) -> some View {
@@ -129,7 +137,7 @@ struct MoveSheet: View {
 #Preview("Mover") {
     PreviewHost(make: { await SessionModel.previewFile() }) { seed in
         if let file = seed.file {
-            MoveSheet(sourceRkey: file.rkey, name: file.name) { _ in .success(()) }
+            MoveSheet(sourceRkey: file.rkey, name: file.name, isFolder: false) { _ in .success(()) }
                 .environment(seed.model)
         } else {
             FilesView()

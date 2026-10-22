@@ -26,7 +26,7 @@ struct FolderView: View {
     var body: some View {
         Group {
             if let model {
-                BrowserList(model: model)
+                BrowserList(model: model, destinationZona: folder.zona)
             } else {
                 LoadingView()
             }
@@ -47,7 +47,7 @@ struct FolderView: View {
             Button("Cancelar", role: .cancel) {}
         }
         .sheet(isPresented: $showingMove) {
-            MoveSheet(sourceRkey: folder.rkey, name: folder.name) { parent in
+            MoveSheet(sourceRkey: folder.rkey, name: folder.name, isFolder: true) { parent in
                 await move(to: parent)
             }
         }
