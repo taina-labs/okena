@@ -161,7 +161,7 @@ As três fontes da marca vêm empacotadas em `Resources/Fonts`: os TTF variávei
 das mesmas famílias que a web auto-hospeda, com a licença OFL de cada uma. O
 eixo `wght` é o mesmo nas duas pontas.
 
-Falta: o ícone, a arte da tela de abertura, e o app Android.
+Falta: a arte da tela de abertura e o app Android.
 
 ## Licença
 
