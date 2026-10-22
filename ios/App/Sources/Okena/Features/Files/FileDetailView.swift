@@ -66,7 +66,7 @@ struct FileDetailView: View {
             Button("Cancelar", role: .cancel) {}
         }
         .sheet(isPresented: $showingMove) {
-            MoveSheet(sourceRkey: file.rkey, name: file.name) { folder in
+            MoveSheet(sourceRkey: file.rkey, name: file.name, isFolder: false) { folder in
                 await move(to: folder)
             }
         }
@@ -152,15 +152,15 @@ struct FileDetailView: View {
         RowCard {
             VStack(alignment: .leading, spacing: Theme.Space.space3) {
                 row("Tamanho", Format.bytes(file.size))
-                row("Tipo", file.mime)
+                row("Tipo", FilesModel.fileKind(file.mime), note: file.mime)
                 row("Criado em", Format.date(file.createdAt))
                 row("Atualizado em", Format.date(file.updatedAt))
-                row("sha256", file.sha256)
+                row(FilesModel.hashLabel, file.sha256, note: FilesModel.hashNote)
             }
         }
     }
 
-    private func row(_ label: String, _ value: String) -> some View {
+    private func row(_ label: String, _ value: String, note: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.space1) {
             Text(label)
                 .typeStyle(Theme.Text.overline)
@@ -169,6 +169,11 @@ struct FileDetailView: View {
                 .typeStyle(Theme.Text.monoSm)
                 .foregroundStyle(Theme.Palette.textPrimary)
                 .textSelection(.enabled)
+            if let note {
+                Text(note)
+                    .typeStyle(Theme.Text.caption)
+                    .foregroundStyle(Theme.Palette.textMuted)
+            }
         }
     }
 
