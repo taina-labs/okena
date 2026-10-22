@@ -28,6 +28,12 @@ targets:
       # as the web, which self-hosts the variable woff2 of the same families.
       - path: Resources/Fonts
         buildPhase: resources
+      # The launch screen. The mark is the same one the app icon carries, and
+      # the background is --bg-app; the colorset and the imageset both carry a
+      # night and a light value, so the launch matches whichever theme the
+      # system is in.
+      - path: Resources/Assets.xcassets
+        buildPhase: resources
       # The app icon, authored in Icon Composer (Xcode 27). Xcode compiles it
       # into Assets.car and writes CFBundleIconName from the build setting
       # below; for the iOS 18 deployment target it also renders the legacy
@@ -43,7 +49,9 @@ targets:
         CFBundleDisplayName: "Tainá"
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchMark
         # The box builds the deep links of the invite and the password reset
         # (taina://convite/:token and taina://redefinir/:token, with the box
         # address in the `host` query param). The scheme is registered here
