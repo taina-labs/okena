@@ -1,0 +1,21 @@
+{
+  "fill": { "solid": "extended-srgb:0.02353,0.03922,0.07843,1.0" },
+  "groups": [
+    {
+      "name": "marca",
+      "layers": [
+        {
+          "name": "marca",
+          "image-name-specializations": [
+            { "value": "marca.svg" },
+            { "appearance": "tinted", "value": "marca-tinted.svg" }
+          ]
+        }
+      ],
+      "shadow": { "kind": "none", "opacity": 0 },
+      "specular": true,
+      "translucency": { "enabled": false, "value": 0 }
+    }
+  ],
+  "supported-platforms": { "squares": ["iOS"] }
+}

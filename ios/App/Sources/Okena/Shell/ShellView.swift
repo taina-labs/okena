@@ -3,13 +3,16 @@ import SwiftUI
 /// The authenticated shell. The same destinations as the web navigation,
 /// laid out for the phone: Início, Arquivos, Fotos and Mural earn a tab, and
 /// the rest of the sidebar (Moradores, Armazenamento, Saúde, Pedidos and
-/// Conta) lives under Mais, where a long tail belongs.
+/// Conta) lives under Mais, where a long tail belongs. The navigation state
+/// is a `ShellModel` in the environment, so the screens can move the person
+/// across tabs (the home's rows do). MainActor like the `SessionModel` it
+/// shares state with: the view's `@State` default builds one in isolation.
+@MainActor
 struct ShellView: View {
-    @State private var selection = ShellView.initialTab()
-    @State private var morePath = ShellView.initialMorePath()
+    @State private var shell = ShellModel()
 
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: $shell.selection) {
             Tab("Início", systemImage: "house", value: ShellTab.inicio) {
                 NavigationStack {
                     HomeView()
@@ -31,36 +34,12 @@ struct ShellView: View {
                 }
             }
             Tab("Mais", systemImage: "ellipsis", value: ShellTab.mais) {
-                NavigationStack(path: $morePath) {
+                NavigationStack(path: $shell.morePath) {
                     MoreView()
                 }
             }
         }
-    }
-
-    /// The tab the app opens on. In DEBUG, `TAINA_TAB` picks it, the same way
-    /// `TAINA_HOST` drives the setup flow: it lets a script or a UI test land
-    /// on a screen without tapping. The running app opens on Início.
-    private static func initialTab() -> ShellTab {
-        #if DEBUG
-        if let raw = ProcessInfo.processInfo.environment["TAINA_TAB"],
-           let tab = ShellTab(rawValue: raw) {
-            return tab
-        }
-        #endif
-        return .inicio
-    }
-
-    /// The same seam for the Mais rows: `TAINA_MORE` opens one of them on
-    /// launch. The running app opens on the Mais list itself.
-    private static func initialMorePath() -> [MoreRoute] {
-        #if DEBUG
-        if let raw = ProcessInfo.processInfo.environment["TAINA_MORE"],
-           let route = MoreRoute(rawValue: raw) {
-            return [route]
-        }
-        #endif
-        return []
+        .environment(shell)
     }
 }
 
