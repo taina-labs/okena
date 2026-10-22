@@ -15,6 +15,7 @@ public actor FakeTainaAPI: TainaAPI {
     private var files: [File]
     private var receivedPedidos: [Pedido]
     private var sentPedidos: [Pedido]
+    private var concessoes: [Concessao]
     private var muralEntries: [MuralEntry]
     private var bytes: [String: Data]
     private var session: Session?
@@ -108,6 +109,10 @@ public actor FakeTainaAPI: TainaAPI {
                 size: 48_213,
                 zona: .casa,
                 folder: assembleia,
+                takenAt: nil,
+                width: nil,
+                height: nil,
+                rendition: .none,
                 deletedAt: nil,
                 createdAt: "2026-03-11T09:30:00Z",
                 updatedAt: "2026-03-11T09:30:00Z"
@@ -122,6 +127,10 @@ public actor FakeTainaAPI: TainaAPI {
                 size: 12_874,
                 zona: .casa,
                 folder: nil,
+                takenAt: nil,
+                width: nil,
+                height: nil,
+                rendition: .none,
                 deletedAt: nil,
                 createdAt: "2026-04-02T16:45:00Z",
                 updatedAt: "2026-04-02T16:45:00Z"
@@ -136,6 +145,10 @@ public actor FakeTainaAPI: TainaAPI {
                 size: 1_204_331,
                 zona: .praca,
                 folder: nil,
+                takenAt: "2026-06-21T21:12:00Z",
+                width: 4032,
+                height: 3024,
+                rendition: .ready,
                 deletedAt: nil,
                 createdAt: "2026-06-21T21:12:00Z",
                 updatedAt: "2026-06-21T21:12:00Z"
@@ -150,6 +163,10 @@ public actor FakeTainaAPI: TainaAPI {
                 size: 934_221,
                 zona: .praca,
                 folder: festa,
+                takenAt: nil,
+                width: nil,
+                height: nil,
+                rendition: .pending,
                 deletedAt: nil,
                 createdAt: "2026-06-21T20:30:00Z",
                 updatedAt: "2026-06-21T20:30:00Z"
@@ -164,6 +181,10 @@ public actor FakeTainaAPI: TainaAPI {
                 size: 52_428_800,
                 zona: .praca,
                 folder: festa,
+                takenAt: nil,
+                width: nil,
+                height: nil,
+                rendition: .none,
                 deletedAt: nil,
                 createdAt: "2026-06-21T22:05:00Z",
                 updatedAt: "2026-06-21T22:05:00Z"
@@ -213,6 +234,32 @@ public actor FakeTainaAPI: TainaAPI {
                 createdAt: "2026-10-10T09:00:00Z",
                 pedinte: ana,
                 dono: joana
+            ),
+        ]
+
+        // One access given (ana is the dono) and one received (ana is the
+        // leitor, already revoked), so both sides of the grants tab
+        // preview with their states.
+        concessoes = [
+            Concessao(
+                publicId: "con3qk9mq2v7w1",
+                tipo: "leitura",
+                recurso: "3m5c9vxyq2b7t",
+                concedidaEm: "2026-10-10T09:00:00Z",
+                revogadaEm: nil,
+                createdAt: "2026-10-10T09:00:00Z",
+                leitor: joana,
+                dono: ana
+            ),
+            Concessao(
+                publicId: "con5rk2mq8v3w7",
+                tipo: "leitura",
+                recurso: "3q9p2xk5m8v1",
+                concedidaEm: "2026-10-11T09:00:00Z",
+                revogadaEm: "2026-10-12T09:00:00Z",
+                createdAt: "2026-10-11T09:00:00Z",
+                leitor: ana,
+                dono: rafael
             ),
         ]
 
@@ -568,6 +615,12 @@ public actor FakeTainaAPI: TainaAPI {
             size: size,
             zona: zona,
             folder: folderRkey,
+            takenAt: nil,
+            width: nil,
+            height: nil,
+            // A fresh upload has no rendition row yet: pending is the
+            // honest state for an image, none for the rest.
+            rendition: mime.hasPrefix("image/") ? .pending : .none,
             deletedAt: nil,
             createdAt: now,
             updatedAt: now
@@ -601,6 +654,10 @@ public actor FakeTainaAPI: TainaAPI {
             size: current.size,
             zona: zona ?? current.zona,
             folder: current.folder,
+            takenAt: current.takenAt,
+            width: current.width,
+            height: current.height,
+            rendition: current.rendition,
             deletedAt: current.deletedAt,
             createdAt: current.createdAt,
             updatedAt: clock()
@@ -611,40 +668,13 @@ public actor FakeTainaAPI: TainaAPI {
 
     public func moveFile(rkey: String, folderRkey: String?) async -> TainaResult<File> {
         await pause()
-        guard let index = files.firstIndex(where: { $0.rkey == rkey }) else {
-            return .failure(.api(Self.notFoundFile))
-        }
-        if let folderRkey, !folders.contains(where: { $0.rkey == folderRkey }) {
-            return .failure(.api(Self.notFoundFolder))
-        }
-        let current = files[index]
-        let moved = File(
-            rkey: current.rkey,
-            cid: current.cid,
-            blobCid: current.blobCid,
-            sha256: current.sha256,
-            name: current.name,
-            mime: current.mime,
-            size: current.size,
-            zona: current.zona,
-            folder: folderRkey,
-            deletedAt: current.deletedAt,
-            createdAt: current.createdAt,
-            updatedAt: clock()
-        )
-        files[index] = moved
-        return .success(moved)
+        return perform(op: .move, rkey: rkey, folderRkey: folderRkey)
     }
 
     /// The file goes to the trash, from where only its owner restores it.
     public func deleteFile(rkey: String) async -> TainaResult<Void> {
         await pause()
-        guard let index = files.firstIndex(where: { $0.rkey == rkey }) else {
-            return .failure(.api(Self.notFoundFile))
-        }
-        let now = clock()
-        files[index] = Self.stamping(files[index], deletedAt: now, updatedAt: now)
-        return .success(())
+        return perform(op: .trash, rkey: rkey, folderRkey: nil).map { _ in }
     }
 
     public func recent(limit: Int?) async -> TainaResult<Page<File>> {
@@ -702,12 +732,45 @@ public actor FakeTainaAPI: TainaAPI {
 
     public func restoreFile(rkey: String) async -> TainaResult<File> {
         await pause()
-        guard let index = files.firstIndex(where: { $0.rkey == rkey }) else {
-            return .failure(.api(Self.notFoundFile))
+        return perform(op: .restore, rkey: rkey, folderRkey: nil)
+    }
+
+    public func manifest(after: String?, limit: Int?) async -> TainaResult<Page<File>> {
+        await pause()
+        let readable = files
+            .filter { $0.deletedAt == nil }
+            .sorted { $0.rkey < $1.rkey }
+        let rest = after.map { cursor in readable.filter { $0.rkey > cursor } } ?? readable
+        // The manifest's own bounds: 200 by default, never past 1000,
+        // walking by the rkey itself and not by an offset.
+        let size = min(max(limit ?? 200, 1), 1000)
+        let page = Array(rest.prefix(size))
+        let next: String? = page.count < rest.count ? page.last?.rkey : nil
+        return .success(Page(items: page, nextCursor: next))
+    }
+
+    /// The batch answers 200 even when items fail: each id runs through
+    /// the same context call the single-item endpoint uses, and the
+    /// outcome list says what became of each one.
+    public func batch(op: BatchOp, ids: [String], folderRkey: String?) async -> TainaResult<[BatchOutcome]> {
+        await pause()
+        guard ids.count <= 200 else {
+            return .failure(.api(APIError(
+                code: "validation_failed",
+                status: 422,
+                message: "A lista tem arquivos demais.",
+                details: ["ids": ["no máximo 200 por vez"]]
+            )))
         }
-        let restored = Self.stamping(files[index], deletedAt: nil, updatedAt: clock())
-        files[index] = restored
-        return .success(restored)
+        let outcomes = ids.map { rkey in
+            switch perform(op: op, rkey: rkey, folderRkey: folderRkey) {
+            case .success(let file):
+                BatchOutcome(rkey: rkey, ok: true, file: file, error: nil)
+            case .failure(let error):
+                BatchOutcome(rkey: rkey, ok: false, file: nil, error: Self.code(of: error))
+            }
+        }
+        return .success(outcomes)
     }
 
     public func photos(limit: Int?, cursor: String?) async -> TainaResult<Page<File>> {
@@ -819,7 +882,239 @@ public actor FakeTainaAPI: TainaAPI {
         return .success(Page(items: ordered, nextCursor: nil))
     }
 
+    public func grants(role: GrantRole) async -> TainaResult<Page<Concessao>> {
+        await pause()
+        let mine = Self.grants(concessoes, for: session?.me.publicId, role: role)
+        return .success(Page(items: mine, nextCursor: nil))
+    }
+
+    /// Revoking is the dono's act, once: a second revoke is a conflict,
+    /// like the box answers.
+    public func revokeGrant(id: String) async -> TainaResult<Void> {
+        await pause()
+        guard let index = concessoes.firstIndex(where: { $0.publicId == id }) else {
+            return .failure(.api(Self.notFoundGrant))
+        }
+        guard concessoes[index].revogadaEm == nil else {
+            return .failure(.api(APIError(
+                code: "invalid_status",
+                status: 409,
+                message: "Este acesso já foi revogado.",
+                details: [:]
+            )))
+        }
+        let current = concessoes[index]
+        concessoes[index] = Concessao(
+            publicId: current.publicId,
+            tipo: current.tipo,
+            recurso: current.recurso,
+            concedidaEm: current.concedidaEm,
+            revogadaEm: clock(),
+            createdAt: current.createdAt,
+            leitor: current.leitor,
+            dono: current.dono
+        )
+        return .success(())
+    }
+
+    /// Mints the invite and keeps the pending person on the roster: the
+    /// username arrives when the invite is accepted.
+    public func inviteMember(papel: Papel) async -> TainaResult<MemberInvite> {
+        await pause()
+        let token = "tk" + Self.randomHex(14)
+        let now = clock()
+        let invited = Ava(
+            publicId: "ava" + Self.randomHex(9),
+            username: nil,
+            displayName: nil,
+            papel: papel,
+            activatedAt: nil,
+            deactivatedAt: nil,
+            createdAt: now
+        )
+        avas.append(invited)
+        return .success(MemberInvite(
+            ava: invited,
+            token: token,
+            inviteUrl: "taina://convite/\(token)?host=\(tekoa.domain)"
+        ))
+    }
+
+    /// The role change, with the one conflict the box enforces: the last
+    /// zeladora cannot step down.
+    public func updateMember(id: String, papel: Papel) async -> TainaResult<Ava> {
+        await pause()
+        guard let index = avas.firstIndex(where: { $0.publicId == id }) else {
+            return .failure(.api(Self.notFoundMember))
+        }
+        if papel == .morador, avas[index].papel == .zelador,
+           !avas.contains(where: { $0.publicId != id && $0.papel == .zelador && $0.deactivatedAt == nil }) {
+            return .failure(.api(APIError(
+                code: "last_zelador",
+                status: 409,
+                message: "Não dá para deixar a comunidade sem ninguém para cuidar dela.",
+                details: [:]
+            )))
+        }
+        avas[index] = Self.rewriting(avas[index], papel: papel, deactivatedAt: avas[index].deactivatedAt)
+        return .success(avas[index])
+    }
+
+    public func deactivateMember(id: String) async -> TainaResult<Void> {
+        await pause()
+        guard let index = avas.firstIndex(where: { $0.publicId == id }) else {
+            return .failure(.api(Self.notFoundMember))
+        }
+        guard avas[index].deactivatedAt == nil else {
+            return .failure(.api(APIError(
+                code: "invalid_status",
+                status: 409,
+                message: "Esta conta já está desativada.",
+                details: [:]
+            )))
+        }
+        avas[index] = Self.rewriting(avas[index], deactivatedAt: clock())
+        return .success(())
+    }
+
+    public func reactivateMember(id: String) async -> TainaResult<Ava> {
+        await pause()
+        guard let index = avas.firstIndex(where: { $0.publicId == id }) else {
+            return .failure(.api(Self.notFoundMember))
+        }
+        guard avas[index].deactivatedAt != nil else {
+            return .failure(.api(APIError(
+                code: "invalid_status",
+                status: 409,
+                message: "Esta conta já está ativa.",
+                details: [:]
+            )))
+        }
+        avas[index] = Self.rewriting(avas[index], deactivatedAt: nil)
+        return .success(avas[index])
+    }
+
+    /// Takes a pending invite back: an accepted account is a member, not
+    /// an invite, and answers conflict here.
+    public func revokeInvite(id: String) async -> TainaResult<Void> {
+        await pause()
+        guard let index = avas.firstIndex(where: { $0.publicId == id }) else {
+            return .failure(.api(Self.notFoundMember))
+        }
+        guard avas[index].username == nil && avas[index].activatedAt == nil else {
+            return .failure(.api(APIError(
+                code: "not_pending",
+                status: 409,
+                message: "Este convite já foi aceito.",
+                details: [:]
+            )))
+        }
+        avas.remove(at: index)
+        return .success(())
+    }
+
+    /// The reset link of one morador. The token is shown once; the
+    /// delivery is human, so the screen copies the deep link and hands
+    /// it over.
+    public func memberResetLink(id: String) async -> TainaResult<ResetLink> {
+        await pause()
+        guard let member = avas.first(where: { $0.publicId == id }) else {
+            return .failure(.api(Self.notFoundMember))
+        }
+        let token = "tk" + Self.randomHex(14)
+        return .success(ResetLink(
+            ava: member,
+            token: token,
+            resetUrl: "taina://redefinir/\(token)?host=\(tekoa.domain)"
+        ))
+    }
+
+    public func setQuota(bytes: Int64) async -> TainaResult<Tekoa> {
+        await pause()
+        guard bytes >= 1 else {
+            return .failure(.api(APIError(
+                code: "validation_failed",
+                status: 422,
+                message: "O limite precisa ser maior que zero.",
+                details: ["quota_bytes": ["tem que ser maior que zero"]]
+            )))
+        }
+        tekoa = Tekoa(
+            publicId: tekoa.publicId,
+            name: tekoa.name,
+            domain: tekoa.domain,
+            storageQuotaBytes: bytes,
+            storageUsedBytes: tekoa.storageUsedBytes,
+            createdAt: tekoa.createdAt
+        )
+        return .success(tekoa)
+    }
+
+    /// The box answers 202: the backup is queued, not done.
+    public func triggerBackup() async -> TainaResult<Void> {
+        await pause()
+        return .success(())
+    }
+
+    /// The fake keeps no passwords, so the current one is never checked
+    /// except by the literals the previews rely on: `errada` answers the
+    /// 403 of a wrong current, `curta` answers the 422 of a weak new.
+    public func updatePassword(current: String, new: String) async -> TainaResult<Void> {
+        await pause()
+        if current == "errada" {
+            return .failure(.api(APIError(
+                code: "invalid_credentials",
+                status: 403,
+                message: "A senha atual não confere.",
+                details: [:]
+            )))
+        }
+        if new == "curta" {
+            return .failure(.api(APIError(
+                code: "validation_failed",
+                status: 422,
+                message: "A senha nova precisa de mais caracteres.",
+                details: ["new_password": ["é muito curta"]]
+            )))
+        }
+        return .success(())
+    }
+
     // MARK: internals
+
+    /// The one context call a batch item shares with the single-item
+    /// endpoint, without the pause: trash, restore, move, publish and
+    /// unpublish, each mutating only this record.
+    private func perform(op: BatchOp, rkey: String, folderRkey: String?) -> TainaResult<File> {
+        guard let index = files.firstIndex(where: { $0.rkey == rkey }) else {
+            return .failure(.api(Self.notFoundFile))
+        }
+        if op == .move, let target = folderRkey, !folders.contains(where: { $0.rkey == target }) {
+            return .failure(.api(Self.notFoundFolder))
+        }
+        let current = files[index]
+        let now = clock()
+        let changed = File(
+            rkey: current.rkey,
+            cid: current.cid,
+            blobCid: current.blobCid,
+            sha256: current.sha256,
+            name: current.name,
+            mime: current.mime,
+            size: current.size,
+            zona: op == .publish ? .praca : op == .unpublish ? .casa : current.zona,
+            folder: op == .move ? folderRkey : current.folder,
+            takenAt: current.takenAt,
+            width: current.width,
+            height: current.height,
+            rendition: current.rendition,
+            deletedAt: op == .trash ? now : op == .restore ? nil : current.deletedAt,
+            createdAt: current.createdAt,
+            updatedAt: now
+        )
+        files[index] = changed
+        return .success(changed)
+    }
 
     private static let unauthorized = APIError(
         code: "not_authenticated",
@@ -872,6 +1167,53 @@ public actor FakeTainaAPI: TainaAPI {
         details: [:]
     )
 
+    private static let notFoundMember = APIError(
+        code: "not_found",
+        status: 404,
+        message: "Não encontramos esta pessoa.",
+        details: [:]
+    )
+
+    private static let notFoundGrant = APIError(
+        code: "not_found",
+        status: 404,
+        message: "Não encontramos este acesso.",
+        details: [:]
+    )
+
+    /// The grants of one role: the caller as dono for the ones she gave,
+    /// as leitor for the ones she received. Pure.
+    static func grants(_ all: [Concessao], for publicId: String?, role: GrantRole) -> [Concessao] {
+        guard let publicId else { return [] }
+        return all.filter { concessao in
+            switch role {
+            case .owner: concessao.dono?.publicId == publicId
+            case .reader: concessao.leitor?.publicId == publicId
+            }
+        }
+    }
+
+    /// The record with the fields a person's act changes. Pure.
+    private static func rewriting(_ ava: Ava, papel: Papel? = nil, deactivatedAt: String?) -> Ava {
+        Ava(
+            publicId: ava.publicId,
+            username: ava.username,
+            displayName: ava.displayName,
+            papel: papel ?? ava.papel,
+            activatedAt: ava.activatedAt,
+            deactivatedAt: deactivatedAt,
+            createdAt: ava.createdAt
+        )
+    }
+
+    /// The wire code of a failure, for the batch's per-item answers. Pure.
+    static func code(of error: TainaError) -> String {
+        if case .api(let apiError) = error {
+            return apiError.code
+        }
+        return "internal_error"
+    }
+
     /// Decides a received pedido, once: a second decision is a conflict,
     /// like the box answers. Pure over the received list, so the rule is
     /// provable without the actor.
@@ -920,6 +1262,10 @@ public actor FakeTainaAPI: TainaAPI {
             size: file.size,
             zona: file.zona,
             folder: file.folder,
+            takenAt: file.takenAt,
+            width: file.width,
+            height: file.height,
+            rendition: file.rendition,
             deletedAt: deletedAt,
             createdAt: file.createdAt,
             updatedAt: updatedAt

@@ -50,17 +50,19 @@ private struct Flash {
     var message: String
 }
 
-/// One segmented screen, two lists, one loading logic: the model's pure
-/// transitions, the shell's thin callbacks.
+/// One segmented screen, two lists of pedidos and the accesses of both
+/// sides, one loading logic: the model's pure transitions, the shell's
+/// thin callbacks.
 struct RequestsList: View {
     let model: RequestsModel
 
     private enum Tab {
-        case received, sent
+        case received, sent, granted
     }
 
     @State private var tab: Tab = .received
     @State private var denying: Pedido?
+    @State private var revoking: Concessao?
     @State private var flash: Flash?
 
     var body: some View {
@@ -68,6 +70,7 @@ struct RequestsList: View {
             Picker("Pedidos", selection: $tab) {
                 Text("Recebidos").tag(Tab.received)
                 Text("Enviados").tag(Tab.sent)
+                Text("Acessos").tag(Tab.granted)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, Theme.Space.space4)
@@ -77,6 +80,8 @@ struct RequestsList: View {
                 section(model.sections.received, empty: receivedEmpty, rows: receivedRows)
             case .sent:
                 section(model.sections.sent, empty: sentEmpty, rows: sentRows)
+            case .granted:
+                grantedSections
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -99,6 +104,22 @@ struct RequestsList: View {
             Button("Cancelar", role: .cancel) {}
         } message: { _ in
             Text("A pessoa não vai poder abrir o arquivo. Ela pode pedir de novo depois.")
+        }
+        .confirmationDialog(
+            "Revogar este acesso?",
+            isPresented: Binding(
+                get: { revoking != nil },
+                set: { if !$0 { revoking = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: revoking
+        ) { concessao in
+            Button("Revogar", role: .destructive) {
+                Task { await revoke(concessao) }
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: { concessao in
+            Text("\(RequestsModel.personLabel(concessao.leitor)) deixa de poder abrir \(RequestsModel.resourceName(for: concessao, in: model.grantNames)). A pessoa pode pedir de novo depois.")
         }
         .alert(
             flash?.title ?? "",
@@ -137,6 +158,72 @@ struct RequestsList: View {
                 .padding(Theme.Space.space4)
             }
         }
+    }
+
+    /// The accesses: two lists on one scroll, the ones given with the
+    /// revoke on the standing rows, the ones received read only.
+    @ViewBuilder
+    private var grantedSections: some View {
+        if model.grants.given.isEmpty && model.grants.received.isEmpty {
+            if model.loading {
+                LoadingView()
+            } else if let error = model.error {
+                ErrorView(error: error, retry: { await model.load() })
+            } else {
+                grantedEmpty
+            }
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Theme.Space.space2) {
+                    overline("Você liberou")
+                    ForEach(model.grants.given, id: \.publicId) { concessao in
+                        GrantRow(
+                            person: RequestsModel.personLabel(concessao.leitor),
+                            resource: RequestsModel.resourceName(for: concessao, in: model.grantNames),
+                            revoked: RequestsModel.isRevoked(concessao),
+                            date: concessao.revogadaEm ?? concessao.concedidaEm ?? concessao.createdAt,
+                            revoking: model.revoking == concessao.publicId,
+                            onRevoke: RequestsModel.isRevoked(concessao) ? nil : { revoking = concessao }
+                        )
+                    }
+                    if model.grants.given.isEmpty {
+                        Text("Nenhum acesso liberado por enquanto. Quando você aprovar um pedido, ele vira um acesso aqui.")
+                            .typeStyle(Theme.Text.bodySm)
+                            .foregroundStyle(Theme.Palette.textMuted)
+                    }
+                    overline("Liberados para você")
+                    ForEach(model.grants.received, id: \.publicId) { concessao in
+                        GrantRow(
+                            person: RequestsModel.personLabel(concessao.dono),
+                            resource: RequestsModel.resourceName(for: concessao, in: model.grantNames),
+                            revoked: RequestsModel.isRevoked(concessao),
+                            date: concessao.revogadaEm ?? concessao.concedidaEm ?? concessao.createdAt
+                        )
+                    }
+                    if model.grants.received.isEmpty {
+                        Text("Nenhum ainda. Quando alguém te deixar ler um arquivo, o acesso aparece aqui.")
+                            .typeStyle(Theme.Text.bodySm)
+                            .foregroundStyle(Theme.Palette.textMuted)
+                    }
+                }
+                .padding(Theme.Space.space4)
+            }
+        }
+    }
+
+    private func overline(_ title: String) -> some View {
+        Text(title)
+            .typeStyle(Theme.Text.overline)
+            .foregroundStyle(Theme.Palette.textMuted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var grantedEmpty: EmptyStateView {
+        EmptyStateView(
+            systemImage: "key",
+            title: "Nenhum acesso por enquanto",
+            message: "Quando você aprovar um pedido, ele vira um acesso aqui, e você pode revogar depois. Os que você recebeu também aparecem."
+        )
     }
 
     private var receivedEmpty: EmptyStateView {
@@ -207,6 +294,12 @@ struct RequestsList: View {
         flash = Self.outcome("Pedido negado", result: result, success: "A pessoa pode pedir de novo quando quiser.")
     }
 
+    private func revoke(_ concessao: Concessao) async {
+        let name = model.grantNames[concessao.recurso]
+        let result = await model.revoke(id: concessao.publicId)
+        flash = Self.outcome("Acesso revogado", result: result, success: RequestsModel.revokedMessage(named: name))
+    }
+
     /// The one alert slot: a decision said out loud, or the failure's own
     /// pt-BR sentence.
     private static func outcome(_ title: String, result: TainaResult<Void>, success message: String) -> Flash {
@@ -231,7 +324,6 @@ struct PedidoRow: View {
     var deciding = false
     var onApprove: (() -> Void)?
     var onDeny: (() -> Void)?
-
     var body: some View {
         RowCard {
             VStack(alignment: .leading, spacing: Theme.Space.space2) {
@@ -262,6 +354,45 @@ struct PedidoRow: View {
                         PrimaryButton(title: "Aprovar", loading: deciding) { onApprove?() }
                     }
                     .disabled(deciding)
+                }
+            }
+        }
+    }
+}
+
+/// One granted access: who reads what, standing or revoked, with the
+/// revoke on the standing ones the caller gave. Revoking is destructive
+/// and says what the person loses; the fact itself stays on the list.
+struct GrantRow: View {
+    let person: String
+    let resource: String
+    let revoked: Bool
+    let date: String
+    var revoking = false
+    var onRevoke: (() -> Void)?
+
+    var body: some View {
+        RowCard {
+            VStack(alignment: .leading, spacing: Theme.Space.space2) {
+                HStack {
+                    Text(person)
+                        .typeStyle(Theme.Text.label)
+                        .foregroundStyle(Theme.Palette.textPrimary)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(revoked ? "Revogado" : "Ativo")
+                        .typeStyle(Theme.Text.caption)
+                        .foregroundStyle(revoked ? Theme.Palette.textMuted : Theme.Palette.feedbackSuccess)
+                }
+                Text(resource)
+                    .typeStyle(Theme.Text.bodySm)
+                    .foregroundStyle(Theme.Palette.textSecondary)
+                Text(Format.relative(date))
+                    .typeStyle(Theme.Text.caption)
+                    .foregroundStyle(Theme.Palette.textFaint)
+                if let onRevoke {
+                    SecondaryButton(title: revoking ? "Revogando..." : "Revogar") { onRevoke() }
+                        .disabled(revoking)
                 }
             }
         }

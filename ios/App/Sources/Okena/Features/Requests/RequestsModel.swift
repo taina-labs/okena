@@ -1,11 +1,12 @@
 import OkenaCore
 import SwiftUI
 
-/// The pedidos screen's state: what the community asked of this person and
-/// what this person asked of others, plus the decisions on the received
-/// ones. Both wire lists hold the pending ones only, so deciding is
-/// removing; the loading logic lives here once and the transitions are pure
-/// functions the views never reimplement.
+/// The pedidos screen's state: what the community asked of this person
+/// and what this person asked of others, the decisions on the received
+/// ones, and the accesses granted in both directions. Both wire lists
+/// hold the pending ones only, so deciding is removing; the loading
+/// logic lives here once and the transitions are pure functions the
+/// views never reimplement.
 @MainActor
 @Observable
 final class RequestsModel {
@@ -14,16 +15,28 @@ final class RequestsModel {
         var sent: [Pedido] = []
     }
 
+    /// The accesses of both sides: the ones this person gave (she is the
+    /// dono) and the ones she received (she is the leitor), the revoked
+    /// included, because granting must stay visible to be reversible.
+    struct Grants: Equatable {
+        var given: [Concessao] = []
+        var received: [Concessao] = []
+    }
+
     private(set) var sections = Sections()
+    private(set) var grants = Grants()
     /// Resource rkey to display name, one map per list: the owner resolves
     /// the name on their own file record, the pedinte reads the access
     /// target, which carries the name without the file itself.
     private(set) var receivedNames: [String: String] = [:]
     private(set) var sentNames: [String: String] = [:]
+    private(set) var grantNames: [String: String] = [:]
     private(set) var loading = false
     private(set) var error: TainaError?
     /// The publicId of the pedido the box is deciding right now.
     private(set) var deciding: String?
+    /// The publicId of the concessao the box is revoking right now.
+    private(set) var revoking: String?
 
     private let api: TainaAPI
     private let session: SessionModel
@@ -38,6 +51,7 @@ final class RequestsModel {
         let received = await session.screen(await api.accessRequests())
         let sent = await session.screen(await api.myRequests())
         await apply(received: received, sent: sent)
+        await loadGrants()
         loading = false
     }
 
@@ -58,14 +72,38 @@ final class RequestsModel {
         return settle(result, id: id)
     }
 
+    /// Takes an access back, the dono's act, one way only: the person
+    /// deixa de poder abrir o arquivo e pode pedir de novo depois. The
+    /// lists are read again, so the row flips to revoked with the date.
+    func revoke(id: String) async -> TainaResult<Void> {
+        revoking = id
+        defer { revoking = nil }
+        let result = await session.screen(await api.revokeGrant(id: id))
+        switch result {
+        case .success:
+            await loadGrants()
+            return .success(())
+        case .failure(let failure):
+            return .failure(failure)
+        }
+    }
+
     // MARK: pure transitions
 
     /// The neutral label for a resource the box no longer knows. Never an
     /// error screen: the pedido, and the decision about it, still stand.
     static let deletedResource = "arquivo apagado"
 
+    /// The neutral label for a file the caller cannot read anymore: a
+    /// revoked grant keeps the fact but takes the name with it.
+    static let unreadableResource = "nome não disponível"
+
     static func resourceName(for pedido: Pedido, in names: [String: String]) -> String {
         names[pedido.recurso] ?? deletedResource
+    }
+
+    static func resourceName(for concessao: Concessao, in names: [String: String]) -> String {
+        names[concessao.recurso] ?? unreadableResource
     }
 
     /// The row's title: the person the row is about, the pedinte on the
@@ -81,6 +119,12 @@ final class RequestsModel {
         received ? "Pediu acesso a \(name)" : "Pedido para abrir \(name)"
     }
 
+    /// Whether a grant still stands: the date of the revoke is the end
+    /// of it, and the row says so.
+    static func isRevoked(_ concessao: Concessao) -> Bool {
+        concessao.revogadaEm != nil
+    }
+
     /// The overline of the received list: every row there waits on this
     /// person.
     static func receivedHeader(count: Int) -> String {
@@ -92,6 +136,12 @@ final class RequestsModel {
     static func approvedMessage(named name: String?) -> String {
         guard let name else { return "Acesso liberado. A pessoa já pode ler." }
         return "Acesso a \(name) liberado. A pessoa já pode ler."
+    }
+
+    /// The outcome of a revoke, said about the file it took back.
+    static func revokedMessage(named name: String?) -> String {
+        guard let name else { return "Acesso revogado. A pessoa já não pode ler." }
+        return "Acesso a \(name) revogado. A pessoa já não pode ler."
     }
 
     /// Removing the decided pedido from both pending lists, by identity.
@@ -110,6 +160,23 @@ final class RequestsModel {
             sections = Sections(received: receivedPage.items, sent: sentPage.items)
             receivedNames = await names(for: receivedPage.items, asOwner: true)
             sentNames = await names(for: sentPage.items, asOwner: false)
+            error = nil
+        case (.failure(let failure), _), (_, .failure(let failure)):
+            error = failure
+        }
+    }
+
+    private func loadGrants() async {
+        let given = await session.screen(await api.grants(role: .owner))
+        let received = await session.screen(await api.grants(role: .reader))
+        await applyGrants(given: given, received: received)
+    }
+
+    private func applyGrants(given: TainaResult<Page<Concessao>>, received: TainaResult<Page<Concessao>>) async {
+        switch (given, received) {
+        case let (.success(givenPage), .success(receivedPage)):
+            grants = Grants(given: givenPage.items, received: receivedPage.items)
+            grantNames = await grantNames(for: givenPage.items + receivedPage.items)
             error = nil
         case (.failure(let failure), _), (_, .failure(let failure)):
             error = failure
@@ -138,6 +205,22 @@ final class RequestsModel {
                 names[pedido.recurso] = name
             } else {
                 names[pedido.recurso] = Self.deletedResource
+            }
+        }
+        return names
+    }
+
+    /// One name per unique resource across both grant lists, read through
+    /// the grant itself: who holds a standing grant can read the file,
+    /// and who lost it reads the neutral label.
+    private func grantNames(for concessoes: [Concessao]) async -> [String: String] {
+        var names: [String: String] = [:]
+        for concessao in concessoes where names[concessao.recurso] == nil {
+            let found: TainaResult<String> = await session.screen(await api.file(rkey: concessao.recurso)).map(\.name)
+            if case .success(let name) = found {
+                names[concessao.recurso] = name
+            } else {
+                names[concessao.recurso] = Self.unreadableResource
             }
         }
         return names

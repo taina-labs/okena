@@ -57,7 +57,16 @@ public struct DeviceToken: Codable, Sendable, Equatable {
     public let createdAt: String
 }
 
-/// The file of the community, a record of the vault.
+/// Where the thumbnails of an image stand: the words the box derives from
+/// the photo record. `none` is for everything that is not an image, so a
+/// document never waits on a rendition that is not coming.
+public enum Rendition: String, Codable, Sendable, CaseIterable {
+    case ready, pending, unavailable, none
+}
+
+/// The file of the community, a record of the vault. The photo fields are
+/// the box's own read of the metadata: the client orders and groups by
+/// them and never re-reads the bytes to know.
 public struct File: Decodable, Sendable, Equatable {
     public let rkey: String
     public let cid: String
@@ -68,6 +77,10 @@ public struct File: Decodable, Sendable, Equatable {
     public let size: Int64
     public let zona: Zona
     public let folder: String?
+    public let takenAt: String?
+    public let width: Int?
+    public let height: Int?
+    public let rendition: Rendition
     public let deletedAt: String?
     public let createdAt: String
     public let updatedAt: String
@@ -83,4 +96,42 @@ public struct Folder: Codable, Sendable, Equatable {
     public let deletedAt: String?
     public let createdAt: String
     public let updatedAt: String
+}
+
+/// The act a batch runs over every id it carries. The words are the wire's.
+public enum BatchOp: String, Codable, Sendable, CaseIterable {
+    case trash, restore, move, publish, unpublish
+}
+
+/// One item of a batch answer: the rkey it acted on and either the file
+/// after the act or the error code the context answered. The batch never
+/// stops at the first failure; the list is the outcome.
+public struct BatchOutcome: Decodable, Sendable, Equatable {
+    public let rkey: String
+    public let ok: Bool
+    public let file: File?
+    public let error: String?
+}
+
+/// Which side of a grant the caller reads: the ones she gave (`owner`,
+/// she is the dono) or the ones she received (`reader`, she is the
+/// leitor). Both come with the revoked ones included.
+public enum GrantRole: String, Codable, Sendable, CaseIterable {
+    case owner, reader
+}
+
+/// The invite the zeladora minted. The token and the deep link come once;
+/// the screen shows them for sharing before letting go.
+public struct MemberInvite: Decodable, Sendable, Equatable {
+    public let ava: Ava
+    public let token: String
+    public let inviteUrl: String
+}
+
+/// The password link of one morador, minted by the zeladora. Same one
+/// time rule as the invite's token.
+public struct ResetLink: Decodable, Sendable, Equatable {
+    public let ava: Ava
+    public let token: String
+    public let resetUrl: String
 }

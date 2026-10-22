@@ -112,6 +112,50 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v1/session/password:
+    post:
+      tags: [Instância e sessão]
+      summary: Trocar a própria senha
+      description: |
+        A troca de senha com a pessoa já dentro: ela diz a senha atual e a
+        nova. A atual errada volta 403 `invalid_credentials`; a nova fraca
+        volta 422 `validation_failed`. Todos os OUTROS dispositivos da
+        pessoa são revogados; o dispositivo desta chamada continua
+        conectado. As senhas não são confirmadas no fio: quem confere as
+        duas é o app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password:
+                  type: string
+                new_password:
+                  type: string
+      responses:
+        "200":
+          description: A senha mudou.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A senha atual não confere (`invalid_credentials`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
   /api/v1/invites/{token}:
     get:
       tags: [Instância e sessão]
@@ -578,7 +622,7 @@ paths:
     get:
       tags: [Pastas e arquivos]
       summary: Conteúdo de uma pasta
-      description: As pastas vêm completas, só os arquivos paginam.
+      description: As pastas vêm completas, só os arquivos paginam. A resposta traz `ETag` fraco.
       parameters:
         - name: folder
           in: query
@@ -588,6 +632,7 @@ paths:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Sort"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: O conteúdo.
@@ -595,6 +640,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FolderContents"
+        "304":
+          $ref: "#/components/responses/NotModified"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -747,7 +794,9 @@ paths:
       description: |
         Os bytes do arquivo, sob a regra de leitura das duas zonas. Aceita
         `Range` (RFC 7233) e responde `206 Partial Content` (ou `416` fora do
-        arquivo).
+        arquivo). O `Content-Disposition` carrega o nome nas duas formas:
+        `filename=` e `filename*=UTF-8''` (RFC 5987); o cliente que respeita
+        a estendida recebe o nome acentuado sem corromper.
       parameters:
         - $ref: "#/components/parameters/FileId"
         - name: Range
@@ -783,7 +832,11 @@ paths:
     get:
       tags: [Pastas e arquivos]
       summary: Miniatura
-      description: Miniatura webp gerada pela rendition. Só `sm` e `md`; sem rendition, 404.
+      description: |
+        Miniatura webp gerada pela rendition. Só `sm` e `md`. O 404 fala o
+        estado no `code`: `rendition_pending` (imagem ainda sem miniatura,
+        pode aparecer depois), `rendition_unavailable` (a geração falhou,
+        não vem) e `not_found` (arquivo ausente ou ilegível, como antes).
       parameters:
         - $ref: "#/components/parameters/FileId"
         - name: size
@@ -805,18 +858,109 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: |
+            Sem miniatura, com o estado no `code`: `rendition_pending`,
+            `rendition_unavailable` ou `not_found`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/files/manifest:
+    get:
+      tags: [Pastas e arquivos]
+      summary: Manifesto de backup
+      description: |
+        O manifesto: cada arquivo legível da pessoa com o hash, do mais
+        antigo para o mais novo (ordem de `rkey` ascendente). É o que um
+        cliente de backup consulta para saber o que já subiu sem listar
+        tudo. Página por `after` (o rkey da última) e `limit` (200 por
+        padrão, 1000 no máximo). A resposta traz `ETag` fraco.
+      parameters:
+        - name: after
+          in: query
+          description: O rkey do último arquivo da página anterior.
+          schema:
+            $ref: "#/components/schemas/Rkey"
+        - name: limit
+          in: query
+          description: Quantos itens por página.
+          schema:
+            type: integer
+            default: 200
+            minimum: 1
+            maximum: 1000
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/FilePage"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/files/batch:
+    post:
+      tags: [Pastas e arquivos]
+      summary: Operação em lote
+      description: |
+        Um ato sobre muitos arquivos de uma vez: `trash`, `restore`,
+        `move`, `publish` ou `unpublish`. O `folder` só quer dizer algo no
+        `move`. Cada id passa pela mesma regra do endpoint individual
+        (dona e zona), e a resposta é 200 mesmo com falhas parciais: a
+        lista de resultados diz, item a item, o que aconteceu.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [op, ids]
+              properties:
+                op:
+                  $ref: "#/components/schemas/BatchOp"
+                ids:
+                  type: array
+                  description: Os rkeys dos arquivos, no máximo 200 por vez.
+                  items:
+                    $ref: "#/components/schemas/Rkey"
+                  maxItems: 200
+                folder:
+                  description: A pasta de destino, só para `move`.
+                  nullable: true
+                  allOf:
+                    - $ref: "#/components/schemas/Rkey"
+      responses:
+        "200":
+          description: |
+            O resultado de cada item, na ordem do pedido. Um item falho
+            não interrompe os outros.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchResults"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
 
   /api/v1/recent:
     get:
       tags: [Pastas e arquivos]
       summary: Recentes
-      description: Os arquivos legíveis mais recentes.
+      description: Os arquivos legíveis mais recentes. A resposta traz `ETag` fraco.
       parameters:
         - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           $ref: "#/components/responses/FilePage"
+        "304":
+          $ref: "#/components/responses/NotModified"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -826,13 +970,16 @@ paths:
     get:
       tags: [Lixeira e fotos]
       summary: Lixeira
-      description: O lixo da própria pessoa; ninguém vê o dos outros.
+      description: O lixo da própria pessoa; ninguém vê o dos outros. A resposta traz `ETag` fraco.
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           $ref: "#/components/responses/FilePage"
+        "304":
+          $ref: "#/components/responses/NotModified"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -863,13 +1010,16 @@ paths:
     get:
       tags: [Lixeira e fotos]
       summary: Grade de fotos
-      description: Fotos e vídeos legíveis, do mais recente para o mais antigo.
+      description: Fotos e vídeos legíveis, do mais recente para o mais antigo. A resposta traz `ETag` fraco.
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           $ref: "#/components/responses/FilePage"
+        "304":
+          $ref: "#/components/responses/NotModified"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -881,10 +1031,12 @@ paths:
       summary: Linha do tempo
       description: |
         As mesmas fotos, agrupadas pela data efetiva (EXIF quando houver, senão
-        o upload). Cada item é um dia com as fotos dentro.
+        o upload). Cada item é um dia com as fotos dentro. A resposta traz
+        `ETag` fraco.
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: Os dias, do mais recente para o mais antigo.
@@ -892,6 +1044,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TimelinePage"
+        "304":
+          $ref: "#/components/responses/NotModified"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1024,6 +1178,66 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /api/v1/grants:
+    get:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Acessos concedidos
+      description: |
+        As concessões de leitura da pessoa, com as revogadas incluídas
+        (revogar não apaga o fato). O `role` escolhe o lado: `owner`
+        (padrão) traz as que ela concedeu (ela é a dona); `reader` traz as
+        que ela recebeu (ela é a leitora). A resposta traz `ETag` fraco.
+      parameters:
+        - name: role
+          in: query
+          description: De que lado da concessão a pessoa olha.
+          schema:
+            $ref: "#/components/schemas/GrantRole"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: As concessões, da mais recente para a mais antiga.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConcessaoPage"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/grants/{id}:
+    delete:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Revogar acesso
+      description: |
+        Toma de volta a leitura que uma concessão deu. Só a dona do
+        recurso. Revogar não apaga o fato: a concessão fica com a data da
+        revogação e continua listada.
+      parameters:
+        - $ref: "#/components/parameters/ConcessaoId"
+      responses:
+        "204":
+          description: Acesso revogado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Autenticado, mas não é a dona do recurso (`not_owner`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: A concessão já estava revogada (`invalid_status`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/v1/mural:
     get:
@@ -1209,6 +1423,22 @@ components:
       description: O token cru do convite ou do link de senha, que o deep link carrega.
       schema:
         type: string
+    ConcessaoId:
+      name: id
+      in: path
+      required: true
+      description: O id público da concessão de leitura.
+      schema:
+        type: string
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      description: |
+        O `ETag` fraco que a resposta anterior trouxe. Igual ao do momento,
+        o box responde 304 sem corpo: a coleção não mudou. O etag é local
+        do escopo de leitura de quem pede.
+      schema:
+        type: string
 
   responses:
     Unauthorized:
@@ -1241,6 +1471,10 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    NotModified:
+      description: |
+        A coleção não mudou desde a resposta marcada pelo `If-None-Match`:
+        304, corpo vazio. O cliente usa o que já tem.
     AvaPage:
       description: Página de pessoas.
       content:
@@ -1368,7 +1602,10 @@ components:
 
     File:
       type: object
-      description: O arquivo da comunidade, com os endereços do mundo CBOR.
+      description: |
+        O arquivo da comunidade, com os endereços do mundo CBOR e os campos
+        do produto que o box acrescenta por cima da forma do kernel: a data
+        efetiva da foto, as dimensões e o estado da miniatura.
       properties:
         rkey:
           $ref: "#/components/schemas/Rkey"
@@ -1390,10 +1627,35 @@ components:
         zona:
           $ref: "#/components/schemas/Zona"
         folder:
-          description: O rkey da pasta pai, quando há.
+          description: |
+            O rkey da pasta pai, resolvido em TODA rota que devolve arquivo
+            (incluindo `/recent`, `/photos`, `/photos/timeline` e `/trash`).
           nullable: true
           allOf:
             - $ref: "#/components/schemas/Rkey"
+        taken_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            A data efetiva da foto (`metadata["taken_at"]` do Jaci),
+            normalizada para UTC com `Z`. Nula fora de fotos.
+        width:
+          type: integer
+          nullable: true
+          description: A largura em pixels, quando o box leu do metadata.
+        height:
+          type: integer
+          nullable: true
+          description: A altura em pixels, quando o box leu do metadata.
+        rendition:
+          type: string
+          description: |
+            O estado das miniaturas do arquivo: `ready` (tem miniaturas),
+            `pending` (imagem sem registro de miniatura ainda),
+            `unavailable` (a geração falhou; o erro fica no registro),
+            `none` (o mime não é `image/*`).
+          enum: [ready, pending, unavailable, none]
         deleted_at:
           type: string
           format: date-time
@@ -1794,3 +2056,42 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/TimelineGroup"
+    ConcessaoPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Concessao"
+    BatchOp:
+      type: string
+      description: O ato que a lote executa sobre cada id.
+      enum: [trash, restore, move, publish, unpublish]
+    GrantRole:
+      type: string
+      description: O lado da concessão que a pessoa olha.
+      enum: [owner, reader]
+    BatchResults:
+      type: object
+      description: O resultado de cada item, na ordem do pedido.
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [rkey, ok]
+            properties:
+              rkey:
+                $ref: "#/components/schemas/Rkey"
+              ok:
+                type: boolean
+              file:
+                description: O arquivo depois do ato, quando o item deu certo.
+                allOf:
+                  - $ref: "#/components/schemas/File"
+              error:
+                type: string
+                description: O código do motivo, quando o item falhou.

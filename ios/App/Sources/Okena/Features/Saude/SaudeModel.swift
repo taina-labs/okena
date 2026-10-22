@@ -33,6 +33,8 @@ final class SaudeModel {
     private(set) var saude: Saude?
     private(set) var loading = false
     private(set) var error: TainaError?
+    /// Whether the box is taking the backup request right now.
+    private(set) var triggering = false
 
     private let api: TainaAPI
     private let session: SessionModel
@@ -40,6 +42,15 @@ final class SaudeModel {
     init(api: TainaAPI, session: SessionModel) {
         self.api = api
         self.session = session
+    }
+
+    /// The acts belong to whoever cares for the box; the server enforces
+    /// it again anyway.
+    var isZelador: Bool {
+        if case .ready(let me) = session.state {
+            return me.ava.papel == .zelador
+        }
+        return false
     }
 
     func load() async {
@@ -53,6 +64,14 @@ final class SaudeModel {
             error = failure
         }
         loading = false
+    }
+
+    /// Asks the box to back itself up now: the answer is the queue, not
+    /// the backup, so the row still reads the last one that finished.
+    func backupNow() async -> TainaResult<Void> {
+        triggering = true
+        defer { triggering = false }
+        return await session.screen(await api.triggerBackup())
     }
 
     // MARK: pure transitions
@@ -102,8 +121,12 @@ final class SaudeModel {
         } else {
             lines = ["Nunca foi feito um backup.", "Quem cuida da máquina cuida do backup."]
         }
-        return Row(icon: "shield", label: "Último backup", lines: lines)
+        return Row(icon: "shield", label: Self.backupLabel, lines: lines)
     }
+
+    /// The label of the backup row, the anchor the screen hangs the
+    /// zeladora's act on.
+    static let backupLabel = "Último backup"
 
     /// Work waiting or running, one line per queue with work. All quiet,
     /// no row at all: a zero is a number, not a fact.
